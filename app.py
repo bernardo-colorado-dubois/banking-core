@@ -13,10 +13,14 @@ load_dotenv()
 
 # Acceder a las variables de entorno
 database_url = os.getenv("DATABASE_URL")
+jwt_secret = os.getenv("JWT_SECRET")
+jwt_expiracion_minutos = int(os.getenv("JWT_EXPIRACION_MINUTOS", "20"))
 
 # Inicializar el contenedor
 container = DIContainer()
 container.config.connection_string.override(database_url)
+container.config.jwt_secret.override(jwt_secret)
+container.config.jwt_expiracion_minutos.override(jwt_expiracion_minutos)
 
 # Wire antes de crear la app
 container.wire(modules=[

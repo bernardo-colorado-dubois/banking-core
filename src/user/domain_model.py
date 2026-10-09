@@ -76,6 +76,9 @@ class RoleRepository:
   def find_by_name(self,nombre:str)->Role|None:
     return self.session.query(Role).filter(Role.nombre==nombre).one_or_none()
 
+  def close(self)->None:
+    self.session.close()
+
 
 class UserRepository:
 
@@ -90,6 +93,9 @@ class UserRepository:
 
   def find_by_email(self,email:str)->User|None:
     return self.session.query(User).filter(User.email==email).one_or_none()
+
+  def close(self)->None:
+    self.session.close()
 
   def update(self,user:User)->None:
     try:
