@@ -1,0 +1,23 @@
+# Framework web (§2)
+Flask==3.1.3
+
+# ORM (§2)
+SQLAlchemy==2.1.4
+
+# Driver de PostgreSQL para SQLAlchemy (postgresql+psycopg://)
+psycopg[binary]==3.3.6
+
+# JWT HS256 (§7, Autenticación)
+PyJWT==2.15.1
+
+# Hash de contraseñas (§7: solo se persiste el hash)
+argon2-cffi==25.1.0
+
+# Carga de .env (§3, Base de datos local)
+python-dotenv==1.2.4
+
+# Inyección de dependencias (contenedores y providers)
+dependency-injector==4.49.1
+
+# Pendiente (§11): herramienta de migraciones (¿Alembic?) y estrategia de pruebas (¿pytest?).
+# Se agregan cuando se decidan.
