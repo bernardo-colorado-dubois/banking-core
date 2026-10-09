@@ -2,8 +2,9 @@ from flask import Blueprint, jsonify, request
 from dependency_injector.wiring import inject, Provide
 
 from src.main.container import DIContainer
-from src.main.utils import bearer_token, json_body
-from src.user.application_service import UserSignup, UserLogin, UserAuthenticator, PasswordChanger
+from src.main.middleware import authenticated
+from src.main.utils import json_body
+from src.user.application_service import UserSignup, UserLogin, PasswordChanger
 from src.user.dto import UserCreate, AuthenticatedUser
 
 blueprint = Blueprint("user", __name__)
@@ -27,13 +28,12 @@ def login(user_login: UserLogin = Provide[DIContainer.user_login]):
 
 # Cambio de contraseña: lo único permitido mientras debe_cambiar_password sea true (§7)
 @blueprint.route("/password", methods=["POST"])
+@authenticated(permitir_password_pendiente=True)
 @inject
 def change_password(
-  password_changer: PasswordChanger = Provide[DIContainer.password_changer],
-  authenticator: UserAuthenticator = Provide[DIContainer.user_authenticator]
+  actor: AuthenticatedUser,
+  password_changer: PasswordChanger = Provide[DIContainer.password_changer]
 ):
-  actor = authenticator.invoque(bearer_token(), permitir_password_pendiente=True)
-
   data = json_body()
   password_actual = data.get('password_actual')
   password_nueva = data.get('password_nueva')
@@ -67,13 +67,12 @@ def signup(rol: str, email, password, actor: AuthenticatedUser, user_signup: Use
 
 # §8.1 Alta de administrador
 @blueprint.route("/admin", methods=["POST"])
+@authenticated()
 @inject
 def signup_admin(
-  user_signup: UserSignup = Provide[DIContainer.user_signup],
-  authenticator: UserAuthenticator = Provide[DIContainer.user_authenticator]
+  actor: AuthenticatedUser,
+  user_signup: UserSignup = Provide[DIContainer.user_signup]
 ):
-  actor = authenticator.invoque(bearer_token())
-
   data = json_body()
   email = data.get('email')
   password = data.get('password')
@@ -82,13 +81,12 @@ def signup_admin(
 
 # §8.2 Alta de operador
 @blueprint.route("/operador", methods=["POST"])
+@authenticated()
 @inject
 def signup_operador(
-  user_signup: UserSignup = Provide[DIContainer.user_signup],
-  authenticator: UserAuthenticator = Provide[DIContainer.user_authenticator]
+  actor: AuthenticatedUser,
+  user_signup: UserSignup = Provide[DIContainer.user_signup]
 ):
-  actor = authenticator.invoque(bearer_token())
-
   data = json_body()
   email = data.get('email')
   password = data.get('password')

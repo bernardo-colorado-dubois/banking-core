@@ -5,6 +5,7 @@ import os
 
 # Importar rutas
 import src.main.routes as main_routes
+import src.main.middleware as main_middleware
 import src.user.routes as user_routes
 import src.account.routes as account_routes
 
@@ -25,6 +26,7 @@ container.config.jwt_expiracion_minutos.override(jwt_expiracion_minutos)
 # Wire antes de crear la app
 container.wire(modules=[
   main_routes
+  ,main_middleware
   ,user_routes
   ,account_routes
 ])
