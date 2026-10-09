@@ -1,13 +1,12 @@
 from src.user.domain_model import User, UserRepository, RoleRepository
 from src.user.dto import UserCreate
-from argon2 import PasswordHasher
+from src.main.utils import hash_password
 
 class UserCreator:
 
-  def __init__(self,repository:UserRepository,role_repository:RoleRepository,password_hasher:PasswordHasher) -> None:
+  def __init__(self,repository:UserRepository,role_repository:RoleRepository) -> None:
     self.repository = repository
     self.role_repository = role_repository
-    self.password_hasher = password_hasher
 
   def invoque(self,dto:UserCreate)->User:
     if self.repository.find_by_email(dto.email) is not None:
@@ -20,7 +19,7 @@ class UserCreator:
     # Solo se persiste el hash, nunca la contraseña en claro
     user = User(
       email=dto.email,
-      password_hash=self.password_hasher.hash(dto.password),
+      password_hash=hash_password(dto.password),
       rol_id=rol.id,
       activo=dto.activo,
       debe_cambiar_password=dto.debe_cambiar_password

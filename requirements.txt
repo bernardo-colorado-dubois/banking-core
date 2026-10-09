@@ -11,7 +11,7 @@ psycopg[binary]==3.3.6
 PyJWT==2.15.1
 
 # Hash de contraseñas (§7: solo se persiste el hash)
-argon2-cffi==25.1.0
+bcrypt==5.0.0
 
 # Carga de .env (§3, Base de datos local)
 python-dotenv==1.2.4
