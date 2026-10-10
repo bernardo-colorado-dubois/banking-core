@@ -1,6 +1,7 @@
 from src.main.database import Base
 from src.user.domain_model import User, Alcance
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Numeric, UniqueConstraint, case, func
+from sqlalchemy import CheckConstraint, Column, DateTime, ForeignKey, MetaData, Numeric, Table, UniqueConstraint, Uuid
+from sqlalchemy import DDL, Enum as SqlEnum, Row, case, event, func, select
 from sqlalchemy.orm import Mapped, mapped_column, relationship, Session
 from datetime import datetime
 from decimal import Decimal
@@ -148,6 +149,41 @@ def salida(cuenta_id:UUID,monto:Decimal)->List[Movement]:
     Movement(cuenta_id=cuenta_id, lado=Lado.CONTRAPARTIDA, naturaleza=Naturaleza.CREDITO, monto=monto),
   ]
 
+# Historial de una cuenta: cada movimiento del principal con el saldo que dejó.
+# El saldo acumulado se calcula en SQL (§4.3: créditos − débitos), no en Python
+CREAR_HISTORIAL = """
+CREATE OR REPLACE VIEW historial_cuentas AS
+SELECT
+  m.id AS movimiento_id,
+  m.cuenta_id,
+  m.transaccion_id,
+  t.tipo,
+  m.naturaleza,
+  m.monto,
+  SUM(CASE WHEN m.naturaleza = 'CREDITO' THEN m.monto ELSE -m.monto END)
+    OVER (PARTITION BY m.cuenta_id ORDER BY m.creado_en, m.id) AS saldo,
+  m.creado_en
+FROM movimientos m
+JOIN transacciones t ON t.id = m.transaccion_id
+WHERE m.lado = 'PRINCIPAL'
+"""
+
+# La vista se crea y se borra junto con las tablas (create_all y drop_all)
+event.listen(Base.metadata, 'after_create', DDL(CREAR_HISTORIAL))
+event.listen(Base.metadata, 'before_drop', DDL('DROP VIEW IF EXISTS historial_cuentas'))
+
+# Va en un MetaData aparte para que create_all no la cree como tabla
+historial_cuentas = Table(
+  'historial_cuentas', MetaData(),
+  Column('movimiento_id', Uuid, primary_key=True),
+  Column('cuenta_id', Uuid),
+  Column('transaccion_id', Uuid),
+  Column('tipo', SqlEnum(TipoTransaccion)),
+  Column('naturaleza', SqlEnum(Naturaleza)),
+  Column('monto', Numeric(18, 2)),
+  Column('saldo', Numeric(18, 2)),
+  Column('creado_en', DateTime(timezone=True)),
+)
 
 class AccountRepository:
 
@@ -176,6 +212,14 @@ class AccountRepository:
       Movement.lado==Lado.PRINCIPAL
     ).scalar()
     return Decimal(saldo).quantize(Decimal('0.01'))
+
+  # Del movimiento más antiguo al más reciente; el saldo de la última fila es el actual
+  def history(self,id:UUID)->List[Row]:
+    return self.session.execute(
+      select(historial_cuentas)
+        .where(historial_cuentas.c.cuenta_id==id)
+        .order_by(historial_cuentas.c.creado_en, historial_cuentas.c.movimiento_id)
+    ).all()
 
   def close(self)->None:
     self.session.close()

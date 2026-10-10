@@ -176,7 +176,7 @@ def transfer(
 
   return operation_json(result), 201
 
-# §8.8 y §8.9 Consulta de saldo
+# §8.8 y §8.9 Consulta de saldo, con el historial de movimientos y el saldo tras cada uno
 @blueprint.route("/<uuid:cuenta_id>/saldo", methods=["GET"])
 @authenticated()
 @inject
@@ -194,5 +194,17 @@ def balance(
     cuenta_id=str(saldo.cuenta_id),
     clase=saldo.clase.value,
     alias=saldo.alias,
-    saldo=str(saldo.saldo)
+    saldo=str(saldo.saldo),
+    movimientos=[
+      dict(
+        movimiento_id=str(movimiento.movimiento_id),
+        transaccion_id=str(movimiento.transaccion_id),
+        tipo=movimiento.tipo.value,
+        naturaleza=movimiento.naturaleza.value,
+        monto=str(movimiento.monto),
+        saldo=str(movimiento.saldo),
+        creado_en=movimiento.creado_en.isoformat()
+      )
+      for movimiento in saldo.movimientos
+    ]
   )

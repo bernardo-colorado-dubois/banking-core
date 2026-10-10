@@ -2,7 +2,7 @@ from decimal import Decimal, InvalidOperation
 from uuid import UUID
 
 from src.account.domain_model import Account, AccountRepository, ClaseCuenta, Transaction
-from src.account.dto import AccountDetail, AccountBalance, OperationResult
+from src.account.dto import AccountDetail, AccountBalance, AccountMovement, OperationResult
 from src.user.domain_model import User, UserRepository, RoleRepository, Accion, Alcance
 from src.user.dto import UserCreate, AuthenticatedUser
 from src.main.errors import PermissionDenied
@@ -262,7 +262,7 @@ class AccountTransfer:
       self.repository.close()
 
 class AccountBalanceReader:
-  """Consulta de saldo (§8.8 y §8.9). No modifica nada."""
+  """Consulta de saldo con su historial de movimientos (§8.8 y §8.9). No modifica nada."""
 
   def __init__(self,repository:AccountRepository) -> None:
     self.repository = repository
@@ -274,11 +274,27 @@ class AccountBalanceReader:
         raise ValueError('No existe la cuenta')
       autorizar(actor, Accion.VER, account)
 
+      movimientos = [
+        AccountMovement(
+          movimiento_id=fila.movimiento_id,
+          transaccion_id=fila.transaccion_id,
+          tipo=fila.tipo,
+          naturaleza=fila.naturaleza,
+          monto=fila.monto,
+          saldo=fila.saldo,
+          creado_en=fila.creado_en
+        )
+        for fila in self.repository.history(account.id)
+      ]
+      # El saldo sale de la misma consulta que el historial: siempre coinciden
+      saldo = movimientos[-1].saldo if movimientos else Decimal('0.00')
+
       return AccountBalance(
         cuenta_id=account.id,
         clase=account.clase,
         alias=account.alias,
-        saldo=self.repository.balance(account.id)
+        saldo=saldo,
+        movimientos=movimientos
       )
     finally:
       self.repository.close()

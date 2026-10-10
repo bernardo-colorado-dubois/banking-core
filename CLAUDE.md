@@ -2,7 +2,7 @@
 
 Core bancario mínimo en Flask + SQLAlchemy + PostgreSQL que registra cuentas y movimientos bajo partida doble, solo en MXN. La especificación completa está en `especificacion-core-bancario.md`: define **qué** se construye. Las secciones marcadas como **Pendiente** (§11) no se implementan por suposición.
 
-Estado actual: el módulo `user` (usuarios, RBAC, login con JWT, altas de admin y operador, cambio de contraseña, perfil) está implementado. El módulo `account` tiene las tablas contables (§9), las aperturas de cuenta (§8.3, §8.4, §8.13) y las operaciones: fondeo, retiro, transferencia y consulta de saldo (§8.5 a §8.12), con las invariantes de §6 y el bloqueo de filas de §10. No hay consulta de movimientos, reversos ni idempotencia (pendientes de §11).
+Estado actual: el módulo `user` (usuarios, RBAC, login con JWT, altas de admin y operador, cambio de contraseña, perfil) está implementado. El módulo `account` tiene las tablas contables (§9), las aperturas de cuenta (§8.3, §8.4, §8.13) y las operaciones: fondeo, retiro, transferencia y consulta de saldo con historial de movimientos (§8.5 a §8.12), con las invariantes de §6 y el bloqueo de filas de §10. No hay reversos ni idempotencia (pendientes de §11).
 
 ## Comandos
 
@@ -12,7 +12,7 @@ venv/bin/python create_admin.py # DESTRUCTIVO: borra y recrea todas las tablas, 
 venv/bin/python app.py          # servidor de desarrollo en http://localhost:8080
 ```
 
-- `create_admin.py` hace `drop_all` + `create_all`. Es la única forma de crear el esquema hoy; no hay migraciones (`migrations/` está vacío, Alembic es un pendiente de §11).
+- `create_admin.py` hace `drop_all` + `create_all`, que también borran y crean la vista `historial_cuentas`. Es la única forma de crear el esquema hoy; no hay migraciones (`migrations/` está vacío, Alembic es un pendiente de §11).
 - No hay pruebas todavía (`tests/` está vacío, la estrategia es un pendiente de §11). Para verificar una ruta se usa `app.test_client()`.
 - Las dependencias están fijadas en `requirements.txt` y se instalan en `venv/`.
 
@@ -50,8 +50,8 @@ src/
 │   ├── application_service.py
 │   └── routes.py
 └── account/
-    ├── domain_model.py      # enums, Account, Transaction (movimientos e invariantes), Movement y AccountRepository
-    ├── dto.py               # AccountDetail, AccountBalance, OperationResult
+    ├── domain_model.py      # enums, Account, Transaction (movimientos e invariantes), Movement, vista historial_cuentas y AccountRepository
+    ├── dto.py               # AccountDetail, AccountBalance, AccountMovement, OperationResult
     ├── application_service.py
     └── routes.py
 ```
@@ -93,7 +93,7 @@ Cuerpos y respuestas:
 - `POST /account/<cuenta_id>/fondeo` y `/retiro`: reciben `monto`.
 - `POST /account/<cuenta_id>/transferencia`: la cuenta de la ruta es el origen; recibe `cuenta_destino_id`, `monto`.
 - Las tres operaciones devuelven 201 con `transaccion_id`, `tipo`, `monto`, `cuenta_id`, `cuenta_destino_id` (nulo salvo en transferencias), `saldo` (el de `cuenta_id` después de la operación) y `creada_en`.
-- `GET /account/<cuenta_id>/saldo`: devuelve `cuenta_id`, `clase`, `alias`, `saldo`.
+- `GET /account/<cuenta_id>/saldo`: devuelve `cuenta_id`, `clase`, `alias`, `saldo` y `movimientos`, la lista completa del más antiguo al más reciente. Cada movimiento trae `movimiento_id`, `transaccion_id`, `tipo`, `naturaleza`, `monto`, `saldo` (el de la cuenta después de ese movimiento) y `creado_en`.
 - `monto` se acepta como texto o número JSON, mayor que cero y con máximo 2 decimales. Los montos y saldos se devuelven como texto con 2 decimales (`"100.50"`), nunca como float.
 
 ## Servicios de aplicación
@@ -120,7 +120,7 @@ Módulo `account`:
 | `NostroAccountOpener` | Exige `ABRIR_CUENTA:NOSTRO`. Rechaza alias repetido entre las cuentas del banco. |
 | `AccountFunder`, `AccountWithdrawer` | Bloquean la cuenta, exigen `FONDEAR` o `RETIRAR` sobre su alcance, arman la transacción, validan §6 y la guardan. |
 | `AccountTransfer` | Bloquea ambas cuentas en orden de id. Exige `TRANSFERIR` solo sobre el origen; el destino solo debe existir. |
-| `AccountBalanceReader` | Exige `VER` sobre el alcance de la cuenta. No bloquea ni modifica nada. |
+| `AccountBalanceReader` | Exige `VER` sobre el alcance de la cuenta. Lee el historial de la vista `historial_cuentas` y toma el saldo de su última fila. No bloquea ni modifica nada. |
 
 Cómo se arma una operación:
 
@@ -148,12 +148,14 @@ Semilla fija de roles (`create_admin.py`, §9):
 
 Tablas: `usuarios`, `roles`, `permisos`, `rol_permisos`, `cuentas`, `transacciones`, `movimientos`. Las claves primarias son UUID.
 
+Vista `historial_cuentas` (`CREAR_HISTORIAL` en `src/account/domain_model.py`): una fila por movimiento del lado `PRINCIPAL`, con el tipo de su transacción y el saldo acumulado de la cuenta, calculado en SQL con una función de ventana ordenada por `creado_en`. Se lee con la tabla `historial_cuentas`, declarada en un `MetaData` aparte para que `create_all` no la cree como tabla.
+
 Decisiones que cierran pendientes de §11:
 
 - Toda cuenta lleva un `alias` obligatorio, NOSTRO y VOSTRO. Es único por titular (`UNIQUE NULLS NOT DISTINCT (titular_id, alias)`), así que también es único entre las NOSTRO.
 - `usuarios.nombre` es el dato del cliente que se pide en el alta (§8.3). Es nulo en admins y operadores.
 - El admin sí opera cuentas VOSTRO, por los permisos de la semilla; no hay un servicio aparte para eso.
-- La consulta de saldo no incluye movimientos.
+- La consulta de saldo incluye el historial de movimientos; no hay un servicio aparte ni paginación.
 
 ## Convenciones
 

@@ -3,7 +3,7 @@ from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
-from src.account.domain_model import ClaseCuenta, TipoTransaccion
+from src.account.domain_model import ClaseCuenta, Naturaleza, TipoTransaccion
 
 @dataclass(frozen=True)
 class AccountDetail:
@@ -16,11 +16,24 @@ class AccountDetail:
   creada_en: datetime
 
 @dataclass(frozen=True)
+class AccountMovement:
+  movimiento_id: UUID
+  transaccion_id: UUID
+  tipo: TipoTransaccion
+  naturaleza: Naturaleza
+  monto: Decimal
+  # Saldo del principal después de este movimiento
+  saldo: Decimal
+  creado_en: datetime
+
+@dataclass(frozen=True)
 class AccountBalance:
   cuenta_id: UUID
   clase: ClaseCuenta
   alias: str
   saldo: Decimal
+  # Del más antiguo al más reciente
+  movimientos: list[AccountMovement]
 
 @dataclass(frozen=True)
 class OperationResult:
