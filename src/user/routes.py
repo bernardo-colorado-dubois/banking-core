@@ -22,6 +22,7 @@ def profile(
   return jsonify(
     id=str(perfil.id),
     email=perfil.email,
+    nombre=perfil.nombre,
     rol=perfil.rol,
     activo=perfil.activo,
     debe_cambiar_password=perfil.debe_cambiar_password,

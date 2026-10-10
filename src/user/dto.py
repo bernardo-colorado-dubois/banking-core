@@ -12,6 +12,7 @@ class UserCreate:
   rol: str
   activo: bool = True
   debe_cambiar_password: bool = True
+  nombre: str | None = None
 
   def __post_init__(self) -> None:
     if len(self.password.encode('utf-8')) > MAX_PASSWORD_BYTES:
@@ -22,6 +23,7 @@ class UserProfile:
   """Datos no sensibles del usuario: nunca incluye el hash de la contraseña."""
   id: UUID
   email: str
+  nombre: str | None
   rol: str
   activo: bool
   debe_cambiar_password: bool

@@ -57,6 +57,8 @@ class User(Base):
 
   id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
   email: Mapped[str] = mapped_column(unique=True, nullable=False)
+  # Obligatorio para clientes (§8.3): se muestra como titular de sus cuentas
+  nombre: Mapped[str | None] = mapped_column(nullable=True)
   password_hash: Mapped[str] = mapped_column(nullable=False)
   rol_id: Mapped[UUID] = mapped_column(ForeignKey('roles.id'), nullable=False)
   activo: Mapped[bool] = mapped_column(default=True, nullable=False)

@@ -2,7 +2,7 @@
 
 Core bancario mínimo en Flask + SQLAlchemy + PostgreSQL que registra cuentas y movimientos bajo partida doble, solo en MXN. La especificación completa está en `especificacion-core-bancario.md`: define **qué** se construye. Las secciones marcadas como **Pendiente** (§11) no se implementan por suposición.
 
-Estado actual: el módulo `user` (usuarios, RBAC, login con JWT, altas de admin y operador, cambio de contraseña) está implementado. El módulo `account` solo tiene una ruta de prueba; el modelo contable (§4 a §6, §8.3 a §8.13, §10) está sin empezar.
+Estado actual: el módulo `user` (usuarios, RBAC, login con JWT, altas de admin y operador, cambio de contraseña, perfil) está implementado. El módulo `account` tiene las tablas contables (§9) y las aperturas de cuenta (§8.3, §8.4, §8.13). Faltan las operaciones y consultas (§5, §6, §8.5 a §8.12) y el bloqueo de filas (§10).
 
 ## Comandos
 
@@ -26,7 +26,7 @@ Se cargan de `.env` con `python-dotenv`. `.env` no se versiona; se crea copiando
 | `DATABASE_URL` | Cadena de conexión de SQLAlchemy (`postgresql+psycopg://...`) |
 | `JWT_SECRET` | Clave de firma HS256 |
 | `JWT_EXPIRACION_MINUTOS` | Duración del access token, 20 por defecto |
-| `BANCO_NOMBRE` | Definida, todavía no se usa en el código |
+| `BANCO_NOMBRE` | Titular que se muestra en las cuentas NOSTRO (§7) |
 | `ADMIN_EMAIL`, `ADMIN_PASSWORD` | Primer admin que crea `create_admin.py` |
 
 ## Estructura
@@ -50,7 +50,10 @@ src/
 │   ├── application_service.py
 │   └── routes.py
 └── account/
-    └── routes.py            # solo la ruta de prueba
+    ├── domain_model.py      # enums, Account, Transaction, Movement y AccountRepository
+    ├── dto.py               # AccountDetail
+    ├── application_service.py
+    └── routes.py
 ```
 
 - Los blueprints van en `src/<módulo>/routes.py`, no en una carpeta `api/`.
@@ -67,19 +70,28 @@ src/
 | POST | `/user/admin` | `UserSignup` (rol `ADMIN`, §8.1) | `@authenticated()` |
 | POST | `/user/operador` | `UserSignup` (rol `OPERADOR`, §8.2) | `@authenticated()` |
 | GET | `/account/` | — | no |
+| POST | `/account/cliente` | `ClientSignup` (§8.3) | `@authenticated()` |
+| POST | `/account/vostro` | `VostroAccountOpener` (§8.4) | `@authenticated()` |
+| POST | `/account/nostro` | `NostroAccountOpener` (§8.13) | `@authenticated()` |
 
 `GET /` y `GET /account/` son de prueba y responden `{"mensaje": "Hello, ...!"}`.
 
 Cuerpos y respuestas:
 
-- `GET /user/`: perfil del usuario autenticado. Devuelve `id`, `email`, `rol`, `activo`, `debe_cambiar_password`, `creado_en` (ISO 8601); nunca el hash de la contraseña.
+- `GET /user/`: perfil del usuario autenticado. Devuelve `id`, `email`, `nombre`, `rol`, `activo`, `debe_cambiar_password`, `creado_en` (ISO 8601); nunca el hash de la contraseña.
 - `POST /user/login`: recibe `email`, `password`. Devuelve `token`, `debe_cambiar_password`.
 - `POST /user/password`: recibe `password_actual`, `password_nueva`. Devuelve `debe_cambiar_password: false`.
 - `POST /user/admin` y `/user/operador`: reciben `email`, `password`. Devuelven 201 con `id`, `email`, `rol`, `activo`, `debe_cambiar_password`.
+- `POST /account/cliente`: recibe `email`, `password`, `nombre`, `alias`. Crea el usuario `CLIENTE` y su primera cuenta VOSTRO.
+- `POST /account/vostro`: recibe `email` del cliente existente y `alias`.
+- `POST /account/nostro`: recibe `alias`.
+- Las tres aperturas devuelven 201 con `id`, `clase`, `alias`, `titular`, `titular_id`, `creada_en`. `titular` es el nombre del cliente o, en NOSTRO, `BANCO_NOMBRE` (con `titular_id` nulo).
 
 ## Servicios de aplicación
 
-Todos están en `src/user/application_service.py` y exponen un único método `invoque(...)`.
+Están en `src/<módulo>/application_service.py` y exponen un único método `invoque(...)`.
+
+Módulo `user`:
 
 | Servicio | Qué hace |
 |---|---|
@@ -89,6 +101,14 @@ Todos están en `src/user/application_service.py` y exponen un único método `i
 | `UserAuthenticator` | Traduce el token a un `AuthenticatedUser`. Consulta al usuario en cada solicitud, así una desactivación o cambio de rol surte efecto de inmediato. Lo usa `@authenticated`. |
 | `UserProfileReader` | Devuelve el `UserProfile` del usuario autenticado, armado antes de cerrar la sesión. |
 | `PasswordChanger` | Cambia la contraseña y apaga `debe_cambiar_password`. |
+
+Módulo `account`:
+
+| Servicio | Qué hace |
+|---|---|
+| `ClientSignup` | Exige `ABRIR_CUENTA:VOSTRO`. Crea el usuario `CLIENTE` y su cuenta en un solo commit: la cuenta se guarda con el titular nuevo en cascada. No pasa por `UserCreator`, que hace su propio commit. |
+| `VostroAccountOpener` | Exige `ABRIR_CUENTA:VOSTRO`. Rechaza email inexistente, usuario que no es `CLIENTE` o inactivo, y alias repetido para ese cliente. |
+| `NostroAccountOpener` | Exige `ABRIR_CUENTA:NOSTRO`. Rechaza alias repetido entre las cuentas del banco. |
 
 ## Autenticación y autorización
 
@@ -106,7 +126,12 @@ Semilla fija de roles (`create_admin.py`, §9):
 | `OPERADOR` | VER, FONDEAR, RETIRAR, TRANSFERIR, ABRIR_CUENTA sobre `NOSTRO`; VER y ABRIR_CUENTA sobre `VOSTRO` |
 | `ADMIN` | VER, FONDEAR, RETIRAR, TRANSFERIR, ABRIR_CUENTA sobre `VOSTRO` y `NOSTRO`; `GESTIONAR_USUARIOS` |
 
-Tablas: `usuarios`, `roles`, `permisos`, `rol_permisos`. Las claves primarias son UUID.
+Tablas: `usuarios`, `roles`, `permisos`, `rol_permisos`, `cuentas`, `transacciones`, `movimientos`. Las claves primarias son UUID.
+
+Decisiones que cierran pendientes de §11:
+
+- Toda cuenta lleva un `alias` obligatorio, NOSTRO y VOSTRO. Es único por titular (`UNIQUE NULLS NOT DISTINCT (titular_id, alias)`), así que también es único entre las NOSTRO.
+- `usuarios.nombre` es el dato del cliente que se pide en el alta (§8.3). Es nulo en admins y operadores.
 
 ## Convenciones
 

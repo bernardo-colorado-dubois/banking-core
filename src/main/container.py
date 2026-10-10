@@ -5,6 +5,8 @@ from sqlalchemy.orm import Session
 from sqlalchemy import create_engine
 
 from src.user.domain_model import UserRepository, RoleRepository
+from src.account.domain_model import AccountRepository
+from src.account.application_service import ClientSignup, VostroAccountOpener, NostroAccountOpener
 from src.user.application_service import UserCreator, UserSignup, UserLogin, UserAuthenticator, UserProfileReader, PasswordChanger
 
 class DIContainer(DeclarativeContainer):
@@ -36,3 +38,22 @@ class DIContainer(DeclarativeContainer):
   )
   user_profile_reader = Factory(UserProfileReader, repository=user_repository)
   password_changer = Factory(PasswordChanger, repository=user_repository)
+
+  account_repository = Factory(AccountRepository, session=session)
+
+  client_signup = Factory(
+    ClientSignup,
+    repository=account_repository,
+    user_repository=user_repository,
+    role_repository=role_repository
+  )
+  vostro_account_opener = Factory(
+    VostroAccountOpener,
+    repository=account_repository,
+    user_repository=user_repository
+  )
+  nostro_account_opener = Factory(
+    NostroAccountOpener,
+    repository=account_repository,
+    banco_nombre=config.banco_nombre
+  )

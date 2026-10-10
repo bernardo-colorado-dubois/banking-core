@@ -24,6 +24,7 @@ class UserCreator:
       # Solo se persiste el hash, nunca la contraseña en claro
       user = User(
         email=dto.email,
+        nombre=dto.nombre,
         password_hash=hash_password(dto.password),
         rol_id=rol.id,
         activo=dto.activo,
@@ -125,6 +126,7 @@ class UserProfileReader:
       return UserProfile(
         id=user.id,
         email=user.email,
+        nombre=user.nombre,
         rol=user.rol.nombre,
         activo=user.activo,
         debe_cambiar_password=user.debe_cambiar_password,
