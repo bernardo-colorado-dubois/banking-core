@@ -1,6 +1,6 @@
 from src.main.database import Base
-from src.user.domain_model import User
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Numeric, UniqueConstraint, func
+from src.user.domain_model import User, Alcance
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Numeric, UniqueConstraint, case, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship, Session
 from datetime import datetime
 from decimal import Decimal
@@ -48,6 +48,12 @@ class Account(Base):
   creada_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
   titular: Mapped[User | None] = relationship()
 
+  # §7 Evaluación: el alcance de la cuenta frente al usuario autenticado
+  def alcance_para(self,usuario_id:UUID)->Alcance:
+    if self.clase == ClaseCuenta.NOSTRO:
+      return Alcance.NOSTRO
+    return Alcance.PROPIAS if self.titular_id == usuario_id else Alcance.VOSTRO
+
 class Transaction(Base):
 
   __tablename__ = 'transacciones'
@@ -57,6 +63,54 @@ class Transaction(Base):
   descripcion: Mapped[str | None] = mapped_column(nullable=True)
   creada_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
   movimientos: Mapped[List["Movement"]] = relationship(back_populates='transaccion')
+
+  # §5 Cada operación arma sus movimientos; nunca se toca un saldo directamente
+  @classmethod
+  def fondeo(cls,cuenta_id:UUID,monto:Decimal)->"Transaction":
+    return cls(tipo=TipoTransaccion.FONDEO, movimientos=entrada(cuenta_id, monto))
+
+  @classmethod
+  def retiro(cls,cuenta_id:UUID,monto:Decimal)->"Transaction":
+    return cls(tipo=TipoTransaccion.RETIRO, movimientos=salida(cuenta_id, monto))
+
+  # Cada lado pasa por su propia contrapartida: 4 movimientos
+  @classmethod
+  def transferencia(cls,origen_id:UUID,destino_id:UUID,monto:Decimal)->"Transaction":
+    return cls(
+      tipo=TipoTransaccion.TRANSFERENCIA,
+      movimientos=salida(origen_id, monto) + entrada(destino_id, monto)
+    )
+
+  def validar(self,saldos:dict[UUID,Decimal])->None:
+    """Invariantes de §6. `saldos` trae el saldo actual del principal de cada cuenta involucrada."""
+    # 4. Montos positivos
+    if any(movimiento.monto <= 0 for movimiento in self.movimientos):
+      raise ValueError('El monto debe ser mayor que cero')
+
+    # 5. En una transferencia, origen y destino son distintos
+    cuentas = {movimiento.cuenta_id for movimiento in self.movimientos}
+    if self.tipo == TipoTransaccion.TRANSFERENCIA and len(cuentas) != 2:
+      raise ValueError('La cuenta origen y la cuenta destino deben ser distintas')
+
+    # 1. Balance de la transacción: débitos = créditos
+    if sum(movimiento.importe for movimiento in self.movimientos) != 0:
+      raise ValueError('La transacción no está balanceada')
+
+    for cuenta_id in cuentas:
+      principal = self.variacion(cuenta_id, Lado.PRINCIPAL)
+      # 2. Balance por cuenta: principal + contrapartida = 0
+      if principal + self.variacion(cuenta_id, Lado.CONTRAPARTIDA) != 0:
+        raise ValueError('La cuenta no cuadra con su contrapartida')
+      # 3. Sin saldos negativos en el principal
+      if saldos[cuenta_id] + principal < 0:
+        raise ValueError('Fondos insuficientes')
+
+  def variacion(self,cuenta_id:UUID,lado:Lado)->Decimal:
+    return sum(
+      (movimiento.importe for movimiento in self.movimientos
+        if movimiento.cuenta_id == cuenta_id and movimiento.lado == lado),
+      Decimal(0)
+    )
 
 # §4.4 Inmutables: nunca se editan ni se borran
 class Movement(Base):
@@ -75,6 +129,25 @@ class Movement(Base):
   creado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
   transaccion: Mapped[Transaction] = relationship(back_populates='movimientos')
 
+  # §4.3 saldo = créditos − débitos
+  @property
+  def importe(self)->Decimal:
+    return self.monto if self.naturaleza == Naturaleza.CREDITO else -self.monto
+
+# Entra dinero a la cuenta: débito a la contrapartida, crédito al principal (§5)
+def entrada(cuenta_id:UUID,monto:Decimal)->List[Movement]:
+  return [
+    Movement(cuenta_id=cuenta_id, lado=Lado.CONTRAPARTIDA, naturaleza=Naturaleza.DEBITO, monto=monto),
+    Movement(cuenta_id=cuenta_id, lado=Lado.PRINCIPAL, naturaleza=Naturaleza.CREDITO, monto=monto),
+  ]
+
+# Sale dinero de la cuenta: débito al principal, crédito a la contrapartida (§5)
+def salida(cuenta_id:UUID,monto:Decimal)->List[Movement]:
+  return [
+    Movement(cuenta_id=cuenta_id, lado=Lado.PRINCIPAL, naturaleza=Naturaleza.DEBITO, monto=monto),
+    Movement(cuenta_id=cuenta_id, lado=Lado.CONTRAPARTIDA, naturaleza=Naturaleza.CREDITO, monto=monto),
+  ]
+
 
 class AccountRepository:
 
@@ -90,8 +163,33 @@ class AccountRepository:
       Account.alias==alias
     ).one_or_none()
 
+  # §10 Bloquea las filas antes de calcular saldos; el orden por id evita deadlocks.
+  # El bloqueo se libera con el commit de save_transaction o con close
+  def find_by_ids_for_update(self,ids:List[UUID])->List[Account]:
+    return self.session.query(Account).filter(Account.id.in_(ids)).order_by(Account.id).with_for_update().all()
+
+  # §4.3 El saldo no se almacena: créditos − débitos del principal
+  def balance(self,id:UUID)->Decimal:
+    importe = case((Movement.naturaleza==Naturaleza.CREDITO, Movement.monto), else_=-Movement.monto)
+    saldo = self.session.query(func.coalesce(func.sum(importe), 0)).filter(
+      Movement.cuenta_id==id,
+      Movement.lado==Lado.PRINCIPAL
+    ).scalar()
+    return Decimal(saldo).quantize(Decimal('0.01'))
+
   def close(self)->None:
     self.session.close()
+
+  # Todos los movimientos van en un solo commit: se registran todos o ninguno (§5)
+  def save_transaction(self,transaction:Transaction)->None:
+    try:
+      self.session.add(transaction)
+      self.session.commit()
+    except:
+      self.session.rollback()
+      raise
+    finally:
+      self.session.close()
 
   # Un titular nuevo se guarda en cascada, en la misma transacción que la cuenta (§8.3)
   def save(self,account:Account)->None:

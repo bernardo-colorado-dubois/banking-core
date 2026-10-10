@@ -2,7 +2,7 @@
 
 Core bancario mínimo en Flask + SQLAlchemy + PostgreSQL que registra cuentas y movimientos bajo partida doble, solo en MXN. La especificación completa está en `especificacion-core-bancario.md`: define **qué** se construye. Las secciones marcadas como **Pendiente** (§11) no se implementan por suposición.
 
-Estado actual: el módulo `user` (usuarios, RBAC, login con JWT, altas de admin y operador, cambio de contraseña, perfil) está implementado. El módulo `account` tiene las tablas contables (§9) y las aperturas de cuenta (§8.3, §8.4, §8.13). Faltan las operaciones y consultas (§5, §6, §8.5 a §8.12) y el bloqueo de filas (§10).
+Estado actual: el módulo `user` (usuarios, RBAC, login con JWT, altas de admin y operador, cambio de contraseña, perfil) está implementado. El módulo `account` tiene las tablas contables (§9), las aperturas de cuenta (§8.3, §8.4, §8.13) y las operaciones: fondeo, retiro, transferencia y consulta de saldo (§8.5 a §8.12), con las invariantes de §6 y el bloqueo de filas de §10. No hay consulta de movimientos, reversos ni idempotencia (pendientes de §11).
 
 ## Comandos
 
@@ -50,8 +50,8 @@ src/
 │   ├── application_service.py
 │   └── routes.py
 └── account/
-    ├── domain_model.py      # enums, Account, Transaction, Movement y AccountRepository
-    ├── dto.py               # AccountDetail
+    ├── domain_model.py      # enums, Account, Transaction (movimientos e invariantes), Movement y AccountRepository
+    ├── dto.py               # AccountDetail, AccountBalance, OperationResult
     ├── application_service.py
     └── routes.py
 ```
@@ -73,6 +73,10 @@ src/
 | POST | `/account/cliente` | `ClientSignup` (§8.3) | `@authenticated()` |
 | POST | `/account/vostro` | `VostroAccountOpener` (§8.4) | `@authenticated()` |
 | POST | `/account/nostro` | `NostroAccountOpener` (§8.13) | `@authenticated()` |
+| POST | `/account/<cuenta_id>/fondeo` | `AccountFunder` (§8.5, §8.10) | `@authenticated()` |
+| POST | `/account/<cuenta_id>/retiro` | `AccountWithdrawer` (§8.6, §8.11) | `@authenticated()` |
+| POST | `/account/<cuenta_id>/transferencia` | `AccountTransfer` (§8.7, §8.12) | `@authenticated()` |
+| GET | `/account/<cuenta_id>/saldo` | `AccountBalanceReader` (§8.8, §8.9) | `@authenticated()` |
 
 `GET /` y `GET /account/` son de prueba y responden `{"mensaje": "Hello, ...!"}`.
 
@@ -86,6 +90,11 @@ Cuerpos y respuestas:
 - `POST /account/vostro`: recibe `email` del cliente existente y `alias`.
 - `POST /account/nostro`: recibe `alias`.
 - Las tres aperturas devuelven 201 con `id`, `clase`, `alias`, `titular`, `titular_id`, `creada_en`. `titular` es el nombre del cliente o, en NOSTRO, `BANCO_NOMBRE` (con `titular_id` nulo).
+- `POST /account/<cuenta_id>/fondeo` y `/retiro`: reciben `monto`.
+- `POST /account/<cuenta_id>/transferencia`: la cuenta de la ruta es el origen; recibe `cuenta_destino_id`, `monto`.
+- Las tres operaciones devuelven 201 con `transaccion_id`, `tipo`, `monto`, `cuenta_id`, `cuenta_destino_id` (nulo salvo en transferencias), `saldo` (el de `cuenta_id` después de la operación) y `creada_en`.
+- `GET /account/<cuenta_id>/saldo`: devuelve `cuenta_id`, `clase`, `alias`, `saldo`.
+- `monto` se acepta como texto o número JSON, mayor que cero y con máximo 2 decimales. Los montos y saldos se devuelven como texto con 2 decimales (`"100.50"`), nunca como float.
 
 ## Servicios de aplicación
 
@@ -109,6 +118,17 @@ Módulo `account`:
 | `ClientSignup` | Exige `ABRIR_CUENTA:VOSTRO`. Crea el usuario `CLIENTE` y su cuenta en un solo commit: la cuenta se guarda con el titular nuevo en cascada. No pasa por `UserCreator`, que hace su propio commit. |
 | `VostroAccountOpener` | Exige `ABRIR_CUENTA:VOSTRO`. Rechaza email inexistente, usuario que no es `CLIENTE` o inactivo, y alias repetido para ese cliente. |
 | `NostroAccountOpener` | Exige `ABRIR_CUENTA:NOSTRO`. Rechaza alias repetido entre las cuentas del banco. |
+| `AccountFunder`, `AccountWithdrawer` | Bloquean la cuenta, exigen `FONDEAR` o `RETIRAR` sobre su alcance, arman la transacción, validan §6 y la guardan. |
+| `AccountTransfer` | Bloquea ambas cuentas en orden de id. Exige `TRANSFERIR` solo sobre el origen; el destino solo debe existir. |
+| `AccountBalanceReader` | Exige `VER` sobre el alcance de la cuenta. No bloquea ni modifica nada. |
+
+Cómo se arma una operación:
+
+- Hay **un servicio por operación**, no uno por rol. `autorizar(actor, accion, account)` calcula el alcance con `account.alcance_para(actor.id)` (`PROPIAS`, `VOSTRO` o `NOSTRO`) y exige el permiso `(accion, alcance)`. Por eso el admin, que tiene los permisos sobre `VOSTRO`, también opera cuentas de clientes.
+- `parse_monto` valida el monto antes de abrir la transacción de BD.
+- `Transaction.fondeo`, `.retiro` y `.transferencia` arman los movimientos de §5. `transaction.validar(saldos)` aplica las invariantes de §6 y se llama siempre antes de `save_transaction`.
+- `find_by_ids_for_update` bloquea las cuentas (`SELECT ... FOR UPDATE`, ordenado por id) y `balance` se calcula después, en la misma sesión. El bloqueo se libera con el commit de `save_transaction` o con `close`.
+- Cuenta inexistente, monto inválido y fondos insuficientes son `ValueError` (400); la falta de permiso es `PermissionDenied` (403).
 
 ## Autenticación y autorización
 
@@ -132,6 +152,8 @@ Decisiones que cierran pendientes de §11:
 
 - Toda cuenta lleva un `alias` obligatorio, NOSTRO y VOSTRO. Es único por titular (`UNIQUE NULLS NOT DISTINCT (titular_id, alias)`), así que también es único entre las NOSTRO.
 - `usuarios.nombre` es el dato del cliente que se pide en el alta (§8.3). Es nulo en admins y operadores.
+- El admin sí opera cuentas VOSTRO, por los permisos de la semilla; no hay un servicio aparte para eso.
+- La consulta de saldo no incluye movimientos.
 
 ## Convenciones
 

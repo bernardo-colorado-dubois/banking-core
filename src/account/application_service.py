@@ -1,5 +1,8 @@
-from src.account.domain_model import Account, AccountRepository, ClaseCuenta
-from src.account.dto import AccountDetail
+from decimal import Decimal, InvalidOperation
+from uuid import UUID
+
+from src.account.domain_model import Account, AccountRepository, ClaseCuenta, Transaction
+from src.account.dto import AccountDetail, AccountBalance, OperationResult
 from src.user.domain_model import User, UserRepository, RoleRepository, Accion, Alcance
 from src.user.dto import UserCreate, AuthenticatedUser
 from src.main.errors import PermissionDenied
@@ -119,6 +122,163 @@ class NostroAccountOpener:
         titular=self.banco_nombre,
         titular_id=None,
         creada_en=account.creada_en
+      )
+    finally:
+      self.repository.close()
+
+# NUMERIC(18,2): hasta 16 dígitos enteros
+MONTO_MAXIMO = Decimal('9999999999999999.99')
+
+def parse_monto(valor)->Decimal:
+  """Reglas comunes a las operaciones (§8): Decimal mayor que cero y con máximo 2 decimales."""
+  # Nunca float (§4.4): un número JSON se convierte desde su texto, no desde su valor binario
+  if isinstance(valor, bool) or not isinstance(valor, (str, int, float)):
+    raise ValueError('El monto no es válido')
+  try:
+    monto = Decimal(str(valor).strip())
+  except InvalidOperation:
+    raise ValueError('El monto no es válido')
+
+  if not monto.is_finite():
+    raise ValueError('El monto no es válido')
+  if monto <= 0:
+    raise ValueError('El monto debe ser mayor que cero')
+  if monto != monto.quantize(Decimal('0.01')):
+    raise ValueError('El monto admite máximo 2 decimales')
+  if monto > MONTO_MAXIMO:
+    raise ValueError('El monto excede el máximo permitido')
+  return monto.quantize(Decimal('0.01'))
+
+def autorizar(actor:AuthenticatedUser,accion:Accion,account:Account)->None:
+  """Exige el permiso (acción, alcance) según el alcance de la cuenta frente al actor (§7)."""
+  if not actor.tiene_permiso(accion, account.alcance_para(actor.id)):
+    raise PermissionDenied('No tiene permiso para esta operación sobre la cuenta')
+
+class AccountFunder:
+  """Fondeo (§8.5 y §8.10): entra dinero externo a la cuenta."""
+
+  def __init__(self,repository:AccountRepository) -> None:
+    self.repository = repository
+
+  def invoque(self,actor:AuthenticatedUser,cuenta_id:UUID,monto)->OperationResult:
+    monto = parse_monto(monto)
+    try:
+      # Se bloquea la cuenta antes de calcular su saldo (§10)
+      cuentas = self.repository.find_by_ids_for_update([cuenta_id])
+      if not cuentas:
+        raise ValueError('No existe la cuenta')
+      account = cuentas[0]
+      autorizar(actor, Accion.FONDEAR, account)
+
+      saldo = self.repository.balance(account.id)
+      transaction = Transaction.fondeo(account.id, monto)
+      transaction.validar({account.id: saldo})
+      self.repository.save_transaction(transaction)
+
+      return OperationResult(
+        transaccion_id=transaction.id,
+        tipo=transaction.tipo,
+        monto=monto,
+        cuenta_id=account.id,
+        cuenta_destino_id=None,
+        saldo=saldo + monto,
+        creada_en=transaction.creada_en
+      )
+    finally:
+      self.repository.close()
+
+class AccountWithdrawer:
+  """Retiro (§8.6 y §8.11): sale dinero de la cuenta hacia fuera del banco."""
+
+  def __init__(self,repository:AccountRepository) -> None:
+    self.repository = repository
+
+  def invoque(self,actor:AuthenticatedUser,cuenta_id:UUID,monto)->OperationResult:
+    monto = parse_monto(monto)
+    try:
+      cuentas = self.repository.find_by_ids_for_update([cuenta_id])
+      if not cuentas:
+        raise ValueError('No existe la cuenta')
+      account = cuentas[0]
+      autorizar(actor, Accion.RETIRAR, account)
+
+      # Sin fondos suficientes, validar rechaza el retiro (§6)
+      saldo = self.repository.balance(account.id)
+      transaction = Transaction.retiro(account.id, monto)
+      transaction.validar({account.id: saldo})
+      self.repository.save_transaction(transaction)
+
+      return OperationResult(
+        transaccion_id=transaction.id,
+        tipo=transaction.tipo,
+        monto=monto,
+        cuenta_id=account.id,
+        cuenta_destino_id=None,
+        saldo=saldo - monto,
+        creada_en=transaction.creada_en
+      )
+    finally:
+      self.repository.close()
+
+class AccountTransfer:
+  """Transferencia entre cuentas del mismo banco (§8.7 y §8.12)."""
+
+  def __init__(self,repository:AccountRepository) -> None:
+    self.repository = repository
+
+  def invoque(self,actor:AuthenticatedUser,origen_id:UUID,destino_id:UUID,monto)->OperationResult:
+    monto = parse_monto(monto)
+    if origen_id == destino_id:
+      raise ValueError('La cuenta origen y la cuenta destino deben ser distintas')
+
+    try:
+      # Ambas cuentas se bloquean siempre en el mismo orden, por id (§10)
+      cuentas = {account.id: account for account in self.repository.find_by_ids_for_update([origen_id, destino_id])}
+      origen = cuentas.get(origen_id)
+      if origen is None:
+        raise ValueError('No existe la cuenta origen')
+
+      # El permiso se evalúa sobre la cuenta origen; el destino solo debe existir (§7)
+      autorizar(actor, Accion.TRANSFERIR, origen)
+      destino = cuentas.get(destino_id)
+      if destino is None:
+        raise ValueError('No existe la cuenta destino')
+
+      saldo = self.repository.balance(origen.id)
+      transaction = Transaction.transferencia(origen.id, destino.id, monto)
+      transaction.validar({origen.id: saldo, destino.id: self.repository.balance(destino.id)})
+      self.repository.save_transaction(transaction)
+
+      return OperationResult(
+        transaccion_id=transaction.id,
+        tipo=transaction.tipo,
+        monto=monto,
+        cuenta_id=origen.id,
+        cuenta_destino_id=destino.id,
+        saldo=saldo - monto,
+        creada_en=transaction.creada_en
+      )
+    finally:
+      self.repository.close()
+
+class AccountBalanceReader:
+  """Consulta de saldo (§8.8 y §8.9). No modifica nada."""
+
+  def __init__(self,repository:AccountRepository) -> None:
+    self.repository = repository
+
+  def invoque(self,actor:AuthenticatedUser,cuenta_id:UUID)->AccountBalance:
+    try:
+      account = self.repository.find_by_id(cuenta_id)
+      if account is None:
+        raise ValueError('No existe la cuenta')
+      autorizar(actor, Accion.VER, account)
+
+      return AccountBalance(
+        cuenta_id=account.id,
+        clase=account.clase,
+        alias=account.alias,
+        saldo=self.repository.balance(account.id)
       )
     finally:
       self.repository.close()

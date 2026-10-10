@@ -7,6 +7,7 @@ from sqlalchemy import create_engine
 from src.user.domain_model import UserRepository, RoleRepository
 from src.account.domain_model import AccountRepository
 from src.account.application_service import ClientSignup, VostroAccountOpener, NostroAccountOpener
+from src.account.application_service import AccountFunder, AccountWithdrawer, AccountTransfer, AccountBalanceReader
 from src.user.application_service import UserCreator, UserSignup, UserLogin, UserAuthenticator, UserProfileReader, PasswordChanger
 
 class DIContainer(DeclarativeContainer):
@@ -57,3 +58,7 @@ class DIContainer(DeclarativeContainer):
     repository=account_repository,
     banco_nombre=config.banco_nombre
   )
+  account_funder = Factory(AccountFunder, repository=account_repository)
+  account_withdrawer = Factory(AccountWithdrawer, repository=account_repository)
+  account_transfer = Factory(AccountTransfer, repository=account_repository)
+  account_balance_reader = Factory(AccountBalanceReader, repository=account_repository)

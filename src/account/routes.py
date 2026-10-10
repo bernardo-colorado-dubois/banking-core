@@ -1,3 +1,5 @@
+from uuid import UUID
+
 from flask import Blueprint, jsonify
 from dependency_injector.wiring import inject, Provide
 
@@ -5,7 +7,8 @@ from src.main.container import DIContainer
 from src.main.middleware import authenticated
 from src.main.utils import json_body
 from src.account.application_service import ClientSignup, VostroAccountOpener, NostroAccountOpener
-from src.account.dto import AccountDetail
+from src.account.application_service import AccountFunder, AccountWithdrawer, AccountTransfer, AccountBalanceReader
+from src.account.dto import AccountDetail, OperationResult
 from src.user.dto import UserCreate, AuthenticatedUser
 
 blueprint = Blueprint("account", __name__)
@@ -95,3 +98,101 @@ def open_nostro(
     return jsonify(error=str(error)), 400
 
   return account_json(account), 201
+
+# Los montos viajan como texto con 2 decimales, nunca como float (§4.4)
+def operation_json(result: OperationResult):
+  return jsonify(
+    transaccion_id=str(result.transaccion_id),
+    tipo=result.tipo.value,
+    monto=str(result.monto),
+    cuenta_id=str(result.cuenta_id),
+    cuenta_destino_id=str(result.cuenta_destino_id) if result.cuenta_destino_id else None,
+    saldo=str(result.saldo),
+    creada_en=result.creada_en.isoformat()
+  )
+
+# §8.5 y §8.10 Fondeo
+@blueprint.route("/<uuid:cuenta_id>/fondeo", methods=["POST"])
+@authenticated()
+@inject
+def fund(
+  cuenta_id: UUID,
+  actor: AuthenticatedUser,
+  account_funder: AccountFunder = Provide[DIContainer.account_funder]
+):
+  data = json_body()
+  if 'monto' not in data:
+    return jsonify(error='monto es obligatorio'), 400
+
+  try:
+    result = account_funder.invoque(actor, cuenta_id, data['monto'])
+  except ValueError as error:
+    return jsonify(error=str(error)), 400
+
+  return operation_json(result), 201
+
+# §8.6 y §8.11 Retiro
+@blueprint.route("/<uuid:cuenta_id>/retiro", methods=["POST"])
+@authenticated()
+@inject
+def withdraw(
+  cuenta_id: UUID,
+  actor: AuthenticatedUser,
+  account_withdrawer: AccountWithdrawer = Provide[DIContainer.account_withdrawer]
+):
+  data = json_body()
+  if 'monto' not in data:
+    return jsonify(error='monto es obligatorio'), 400
+
+  try:
+    result = account_withdrawer.invoque(actor, cuenta_id, data['monto'])
+  except ValueError as error:
+    return jsonify(error=str(error)), 400
+
+  return operation_json(result), 201
+
+# §8.7 y §8.12 Transferencia: la cuenta de la ruta es el origen
+@blueprint.route("/<uuid:cuenta_id>/transferencia", methods=["POST"])
+@authenticated()
+@inject
+def transfer(
+  cuenta_id: UUID,
+  actor: AuthenticatedUser,
+  account_transfer: AccountTransfer = Provide[DIContainer.account_transfer]
+):
+  data = json_body()
+  if 'monto' not in data or 'cuenta_destino_id' not in data:
+    return jsonify(error='cuenta_destino_id y monto son obligatorios'), 400
+
+  try:
+    cuenta_destino_id = UUID(data['cuenta_destino_id'])
+  except (ValueError, TypeError, AttributeError):
+    return jsonify(error='cuenta_destino_id no es válido'), 400
+
+  try:
+    result = account_transfer.invoque(actor, cuenta_id, cuenta_destino_id, data['monto'])
+  except ValueError as error:
+    return jsonify(error=str(error)), 400
+
+  return operation_json(result), 201
+
+# §8.8 y §8.9 Consulta de saldo
+@blueprint.route("/<uuid:cuenta_id>/saldo", methods=["GET"])
+@authenticated()
+@inject
+def balance(
+  cuenta_id: UUID,
+  actor: AuthenticatedUser,
+  account_balance_reader: AccountBalanceReader = Provide[DIContainer.account_balance_reader]
+):
+  try:
+    saldo = account_balance_reader.invoque(actor, cuenta_id)
+  except ValueError as error:
+    return jsonify(error=str(error)), 400
+
+  return jsonify(
+    cuenta_id=str(saldo.cuenta_id),
+    clase=saldo.clase.value,
+    alias=saldo.alias,
+    saldo=str(saldo.saldo)
+  )
