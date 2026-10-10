@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import create_engine
 
 from src.user.domain_model import UserRepository, RoleRepository
-from src.user.application_service import UserCreator, UserSignup, UserLogin, UserAuthenticator, PasswordChanger
+from src.user.application_service import UserCreator, UserSignup, UserLogin, UserAuthenticator, UserProfileReader, PasswordChanger
 
 class DIContainer(DeclarativeContainer):
 
@@ -34,4 +34,5 @@ class DIContainer(DeclarativeContainer):
     repository=user_repository,
     jwt_secret=config.jwt_secret
   )
+  user_profile_reader = Factory(UserProfileReader, repository=user_repository)
   password_changer = Factory(PasswordChanger, repository=user_repository)

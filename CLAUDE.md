@@ -46,7 +46,7 @@ src/
 │   └── utils.py             # bcrypt, JWT, bearer_token(), json_body()
 ├── user/
 │   ├── domain_model.py      # enums, modelos ORM y repositorios
-│   ├── dto.py               # UserCreate, AuthenticatedUser
+│   ├── dto.py               # UserCreate, UserProfile, AuthenticatedUser
 │   ├── application_service.py
 │   └── routes.py
 └── account/
@@ -61,17 +61,18 @@ src/
 | Método | Ruta | Servicio de aplicación | Auth |
 |---|---|---|---|
 | GET | `/` | — | no |
-| GET | `/user/` | — | no |
+| GET | `/user/` | `UserProfileReader` | `@authenticated(permitir_password_pendiente=True)` |
 | POST | `/user/login` | `UserLogin` | no |
 | POST | `/user/password` | `PasswordChanger` | `@authenticated(permitir_password_pendiente=True)` |
 | POST | `/user/admin` | `UserSignup` (rol `ADMIN`, §8.1) | `@authenticated()` |
 | POST | `/user/operador` | `UserSignup` (rol `OPERADOR`, §8.2) | `@authenticated()` |
 | GET | `/account/` | — | no |
 
-Las tres rutas `GET` son de prueba y responden `{"mensaje": "Hello, ...!"}`.
+`GET /` y `GET /account/` son de prueba y responden `{"mensaje": "Hello, ...!"}`.
 
 Cuerpos y respuestas:
 
+- `GET /user/`: perfil del usuario autenticado. Devuelve `id`, `email`, `rol`, `activo`, `debe_cambiar_password`, `creado_en` (ISO 8601); nunca el hash de la contraseña.
 - `POST /user/login`: recibe `email`, `password`. Devuelve `token`, `debe_cambiar_password`.
 - `POST /user/password`: recibe `password_actual`, `password_nueva`. Devuelve `debe_cambiar_password: false`.
 - `POST /user/admin` y `/user/operador`: reciben `email`, `password`. Devuelven 201 con `id`, `email`, `rol`, `activo`, `debe_cambiar_password`.
@@ -86,6 +87,7 @@ Todos están en `src/user/application_service.py` y exponen un único método `i
 | `UserSignup` | Exige el permiso `GESTIONAR_USUARIOS` y solo acepta los roles `ADMIN` y `OPERADOR`; delega en `UserCreator`. Los clientes se dan de alta con su cuenta (§8.3). |
 | `UserLogin` | Verifica credenciales y usuario activo, emite el JWT. Devuelve el mismo error en todos los fallos para no revelar qué emails existen. |
 | `UserAuthenticator` | Traduce el token a un `AuthenticatedUser`. Consulta al usuario en cada solicitud, así una desactivación o cambio de rol surte efecto de inmediato. Lo usa `@authenticated`. |
+| `UserProfileReader` | Devuelve el `UserProfile` del usuario autenticado, armado antes de cerrar la sesión. |
 | `PasswordChanger` | Cambia la contraseña y apaga `debe_cambiar_password`. |
 
 ## Autenticación y autorización

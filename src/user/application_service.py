@@ -1,7 +1,7 @@
 from uuid import UUID
 
 from src.user.domain_model import User, UserRepository, RoleRepository, Accion
-from src.user.dto import UserCreate, AuthenticatedUser
+from src.user.dto import UserCreate, AuthenticatedUser, UserProfile
 from src.main.errors import AuthenticationError, PermissionDenied
 from src.main.utils import MAX_PASSWORD_BYTES, hash_password, check_password, create_token, decode_token
 
@@ -105,6 +105,30 @@ class UserAuthenticator:
         id=user.id,
         rol=user.rol.nombre,
         permisos=frozenset((permiso.accion, permiso.alcance) for permiso in user.rol.permisos)
+      )
+    finally:
+      self.repository.close()
+
+class UserProfileReader:
+  """Perfil del usuario autenticado, sin datos sensibles."""
+
+  def __init__(self,repository:UserRepository) -> None:
+    self.repository = repository
+
+  def invoque(self,actor:AuthenticatedUser)->UserProfile:
+    try:
+      user = self.repository.find_by_id(actor.id)
+      if user is None:
+        raise AuthenticationError('Token inválido o expirado')
+
+      # El DTO se arma antes de cerrar la sesión: el rol se carga de forma diferida
+      return UserProfile(
+        id=user.id,
+        email=user.email,
+        rol=user.rol.nombre,
+        activo=user.activo,
+        debe_cambiar_password=user.debe_cambiar_password,
+        creado_en=user.creado_en
       )
     finally:
       self.repository.close()

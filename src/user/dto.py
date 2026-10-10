@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import datetime
 from uuid import UUID
 
 from src.main.utils import MAX_PASSWORD_BYTES
@@ -15,6 +16,16 @@ class UserCreate:
   def __post_init__(self) -> None:
     if len(self.password.encode('utf-8')) > MAX_PASSWORD_BYTES:
       raise ValueError(f'La contraseña no puede exceder {MAX_PASSWORD_BYTES} bytes')
+
+@dataclass(frozen=True)
+class UserProfile:
+  """Datos no sensibles del usuario: nunca incluye el hash de la contraseña."""
+  id: UUID
+  email: str
+  rol: str
+  activo: bool
+  debe_cambiar_password: bool
+  creado_en: datetime
 
 @dataclass(frozen=True)
 class AuthenticatedUser:

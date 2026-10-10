@@ -4,14 +4,29 @@ from dependency_injector.wiring import inject, Provide
 from src.main.container import DIContainer
 from src.main.middleware import authenticated
 from src.main.utils import json_body
-from src.user.application_service import UserSignup, UserLogin, PasswordChanger
+from src.user.application_service import UserSignup, UserLogin, UserProfileReader, PasswordChanger
 from src.user.dto import UserCreate, AuthenticatedUser
 
 blueprint = Blueprint("user", __name__)
 
+# Perfil del usuario autenticado. Se permite con la contraseña pendiente
+# para que el cliente pueda leer debe_cambiar_password (§7)
 @blueprint.route("/")
-def hello_user():
-  return jsonify(mensaje="Hello, User!")
+@authenticated(permitir_password_pendiente=True)
+@inject
+def profile(
+  actor: AuthenticatedUser,
+  user_profile_reader: UserProfileReader = Provide[DIContainer.user_profile_reader]
+):
+  perfil = user_profile_reader.invoque(actor)
+  return jsonify(
+    id=str(perfil.id),
+    email=perfil.email,
+    rol=perfil.rol,
+    activo=perfil.activo,
+    debe_cambiar_password=perfil.debe_cambiar_password,
+    creado_en=perfil.creado_en.isoformat()
+  )
 
 # §7 Autenticación: email y contraseña a cambio del access token
 @blueprint.route("/login", methods=["POST"])
