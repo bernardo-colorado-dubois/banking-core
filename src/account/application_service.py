@@ -286,14 +286,10 @@ class AccountBalanceReader:
         )
         for fila in self.repository.history(account.id)
       ]
-      # El saldo sale de la misma consulta que el historial: siempre coinciden
-      saldo = movimientos[-1].saldo if movimientos else Decimal('0.00')
-
       return AccountBalance(
         cuenta_id=account.id,
         clase=account.clase,
         alias=account.alias,
-        saldo=saldo,
         movimientos=movimientos
       )
     finally:

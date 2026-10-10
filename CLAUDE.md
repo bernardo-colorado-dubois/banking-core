@@ -93,7 +93,7 @@ Cuerpos y respuestas:
 - `POST /account/<cuenta_id>/fondeo` y `/retiro`: reciben `monto`.
 - `POST /account/<cuenta_id>/transferencia`: la cuenta de la ruta es el origen; recibe `cuenta_destino_id`, `monto`.
 - Las tres operaciones devuelven 201 con `transaccion_id`, `tipo`, `monto`, `cuenta_id`, `cuenta_destino_id` (nulo salvo en transferencias), `saldo` (el de `cuenta_id` después de la operación) y `creada_en`.
-- `GET /account/<cuenta_id>/saldo`: devuelve `cuenta_id`, `clase`, `alias`, `saldo` y `movimientos`, la lista completa del más antiguo al más reciente. Cada movimiento trae `movimiento_id`, `transaccion_id`, `tipo`, `naturaleza`, `monto`, `saldo` (el de la cuenta después de ese movimiento) y `creado_en`.
+- `GET /account/<cuenta_id>/saldo`: devuelve `cuenta_id`, `clase`, `alias` y `movimientos`, la lista completa del más antiguo al más reciente. Cada movimiento trae `movimiento_id`, `transaccion_id`, `tipo`, `naturaleza`, `monto`, `saldo` (el de la cuenta después de ese movimiento) y `creado_en`. No hay saldo global en la cabecera: el saldo actual es el del último movimiento, y una cuenta sin movimientos devuelve la lista vacía.
 - `monto` se acepta como texto o número JSON, mayor que cero y con máximo 2 decimales. Los montos y saldos se devuelven como texto con 2 decimales (`"100.50"`), nunca como float.
 
 ## Servicios de aplicación
@@ -120,7 +120,7 @@ Módulo `account`:
 | `NostroAccountOpener` | Exige `ABRIR_CUENTA:NOSTRO`. Rechaza alias repetido entre las cuentas del banco. |
 | `AccountFunder`, `AccountWithdrawer` | Bloquean la cuenta, exigen `FONDEAR` o `RETIRAR` sobre su alcance, arman la transacción, validan §6 y la guardan. |
 | `AccountTransfer` | Bloquea ambas cuentas en orden de id. Exige `TRANSFERIR` solo sobre el origen; el destino solo debe existir. |
-| `AccountBalanceReader` | Exige `VER` sobre el alcance de la cuenta. Lee el historial de la vista `historial_cuentas` y toma el saldo de su última fila. No bloquea ni modifica nada. |
+| `AccountBalanceReader` | Exige `VER` sobre el alcance de la cuenta. Devuelve el historial de la vista `historial_cuentas`, con el saldo en cada movimiento. No bloquea ni modifica nada. |
 
 Cómo se arma una operación:
 
@@ -148,14 +148,14 @@ Semilla fija de roles (`create_admin.py`, §9):
 
 Tablas: `usuarios`, `roles`, `permisos`, `rol_permisos`, `cuentas`, `transacciones`, `movimientos`. Las claves primarias son UUID.
 
-Vista `historial_cuentas` (`CREAR_HISTORIAL` en `src/account/domain_model.py`): una fila por movimiento del lado `PRINCIPAL`, con el tipo de su transacción y el saldo acumulado de la cuenta, calculado en SQL con una función de ventana ordenada por `creado_en`. Se lee con la tabla `historial_cuentas`, declarada en un `MetaData` aparte para que `create_all` no la cree como tabla.
+Vista `historial_cuentas` (`CREAR_HISTORIAL` en `src/account/domain_model.py`): una fila por movimiento del lado `PRINCIPAL`, con el tipo de su transacción y el saldo acumulado de la cuenta, calculado en SQL con una función de ventana ordenada por `creado_en`. Por eso `movimientos.creado_en` toma `clock_timestamp()` y no `now()`: se asigna después de obtener el bloqueo de la cuenta, así que el orden por fecha es el orden en que se aplicaron los movimientos. Se lee con la tabla `historial_cuentas`, declarada en un `MetaData` aparte para que `create_all` no la cree como tabla.
 
 Decisiones que cierran pendientes de §11:
 
 - Toda cuenta lleva un `alias` obligatorio, NOSTRO y VOSTRO. Es único por titular (`UNIQUE NULLS NOT DISTINCT (titular_id, alias)`), así que también es único entre las NOSTRO.
 - `usuarios.nombre` es el dato del cliente que se pide en el alta (§8.3). Es nulo en admins y operadores.
 - El admin sí opera cuentas VOSTRO, por los permisos de la semilla; no hay un servicio aparte para eso.
-- La consulta de saldo incluye el historial de movimientos; no hay un servicio aparte ni paginación.
+- La consulta de saldo devuelve el historial de movimientos con el saldo tras cada uno, sin saldo global; no hay un servicio aparte ni paginación.
 
 ## Convenciones
 

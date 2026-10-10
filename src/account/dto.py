@@ -31,8 +31,7 @@ class AccountBalance:
   cuenta_id: UUID
   clase: ClaseCuenta
   alias: str
-  saldo: Decimal
-  # Del más antiguo al más reciente
+  # Del más antiguo al más reciente; el saldo actual es el del último movimiento
   movimientos: list[AccountMovement]
 
 @dataclass(frozen=True)

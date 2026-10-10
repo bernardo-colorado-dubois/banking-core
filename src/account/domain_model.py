@@ -127,7 +127,10 @@ class Movement(Base):
   lado: Mapped[Lado] = mapped_column(nullable=False)
   naturaleza: Mapped[Naturaleza] = mapped_column(nullable=False)
   monto: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
-  creado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+  # clock_timestamp() y no now(): now() es la hora en que empezó la transacción de BD,
+  # antes de obtener el bloqueo de la cuenta (§10). Con la hora real de inserción,
+  # los movimientos de una cuenta quedan en el orden en que se aplicaron
+  creado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.clock_timestamp(), nullable=False)
   transaccion: Mapped[Transaction] = relationship(back_populates='movimientos')
 
   # §4.3 saldo = créditos − débitos
