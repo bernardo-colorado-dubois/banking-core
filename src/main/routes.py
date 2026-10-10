@@ -6,7 +6,7 @@ blueprint = Blueprint("main", __name__)
 
 @blueprint.route("/")
 def hello_world():
-  return "<p>Hello, World!</p>"
+  return jsonify(mensaje="Hello, World!")
 
 # Manejo de errores compartido por todos los módulos
 @blueprint.app_errorhandler(AuthenticationError)

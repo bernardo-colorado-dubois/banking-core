@@ -1,7 +1,7 @@
-from flask import Blueprint
+from flask import Blueprint, jsonify
 
 blueprint = Blueprint("account", __name__)
 
 @blueprint.route("/")
 def hello_account():
-  return "<p>Hello, Account!</p>"
+  return jsonify(mensaje="Hello, Account!")

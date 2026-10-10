@@ -11,7 +11,7 @@ blueprint = Blueprint("user", __name__)
 
 @blueprint.route("/")
 def hello_user():
-  return "<p>Hello, User!</p>"
+  return jsonify(mensaje="Hello, User!")
 
 # §7 Autenticación: email y contraseña a cambio del access token
 @blueprint.route("/login", methods=["POST"])
