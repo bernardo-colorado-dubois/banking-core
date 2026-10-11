@@ -247,6 +247,8 @@ Cada cuenta tiene dos lados en el libro: el **principal**, que es el saldo que v
 saldo = créditos − débitos del lado PRINCIPAL
 ```
 
+El principal es de **naturaleza acreedora**: un crédito lo aumenta y un débito lo disminuye. La contrapartida es la deudora. Por eso un fondeo aparece en el historial de la cuenta como `CREDITO` y un retiro como `DEBITO`.
+
 ### Operaciones
 
 Cada operación es una transacción atómica: se registran todos sus movimientos o ninguno.
