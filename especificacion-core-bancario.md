@@ -526,13 +526,13 @@ Como el saldo se calcula a partir de movimientos, dos operaciones simultáneas s
 
 ## 11. Pendientes
 
-- [ ] Servicios: todas las cuentas NOSTRO tienen el mismo titular (el banco). ¿Llevan un alias para distinguirlas entre sí (por ejemplo "Capital", "Comisiones")? Eso sería la entrada de §8.13 y una columna `alias` en `cuentas`.
-- [ ] Servicios: el admin tiene permisos para operar cuentas VOSTRO, pero no hay un servicio para eso. ¿Se agrega, o el admin no opera cuentas de clientes en la práctica?
-- [ ] Servicios: ¿la consulta de saldo incluye la lista de movimientos, o la consulta de movimientos es un servicio aparte?
-- [ ] Servicios: faltan inicio de sesión y cambio de contraseña (necesario por `debe_cambiar_password`). ¿Se agregan?
+- [x] Servicios: todas las cuentas NOSTRO tienen el mismo titular (el banco). ¿Llevan un alias para distinguirlas entre sí (por ejemplo "Capital", "Comisiones")? Eso sería la entrada de §8.13 y una columna `alias` en `cuentas`.
+- [x] Servicios: el admin tiene permisos para operar cuentas VOSTRO, pero no hay un servicio para eso. ¿Se agrega, o el admin no opera cuentas de clientes en la práctica?
+- [x] Servicios: ¿la consulta de saldo incluye la lista de movimientos, o la consulta de movimientos es un servicio aparte?
+- [x] Servicios: faltan inicio de sesión y cambio de contraseña (necesario por `debe_cambiar_password`). ¿Se agregan?
 - [ ] Servicios: ¿hay servicios para desactivar usuarios o cambiarles el rol?
-- [ ] Endpoints de la API (rutas, payloads, respuestas, códigos de error).
-- [ ] Apertura de cuentas: datos requeridos del titular.
+- [x] Endpoints de la API (rutas, payloads, respuestas, códigos de error).
+- [x] Apertura de cuentas: datos requeridos del titular.
 - [ ] Reversos: si se implementan como transacción de tipo propio que referencia a la original.
 - [ ] Idempotencia de operaciones (por ejemplo, una clave de idempotencia por solicitud).
 - [ ] Migraciones (Alembic u otra herramienta).
