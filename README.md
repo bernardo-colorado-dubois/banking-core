@@ -84,10 +84,45 @@ venv/bin/python app.py
 
 El código se organiza por **módulos de negocio**. Cada módulo tiene cuatro archivos, uno por responsabilidad, y las dependencias apuntan hacia el dominio:
 
+```mermaid
+flowchart LR
+  cliente(["Cliente HTTP"])
+  subgraph modulo["Módulo de negocio: user o account"]
+    direction LR
+    rutas["routes.py<br/>Blueprint de Flask"]
+    servicios["application_service.py<br/>Casos de uso"]
+    dominio["domain_model.py<br/>Modelos ORM y repositorio"]
+    dto["dto.py<br/>Dataclasses"]
+  end
+  bd[("PostgreSQL")]
+
+  cliente -->|"JSON + Bearer token"| rutas
+  rutas -->|"invoque(...)"| servicios
+  servicios --> dominio
+  dominio -->|"SQLAlchemy"| bd
+  servicios -.->|"devuelve"| dto
+  dto -.->|"se serializa a JSON"| rutas
 ```
-rutas (routes.py)  →  servicios de aplicación (application_service.py)  →  dominio y repositorios (domain_model.py)
-                                    ↑
-                              DTO (dto.py)
+
+Los módulos se apoyan en `src/main`, que es compartido, y `account` depende de `user` (titulares, permisos y alcances); `user` no conoce a `account`. La única dependencia en sentido contrario es la de `@authenticated`, que vive en `src/main` y usa el `UserAuthenticator` de `user`:
+
+```mermaid
+flowchart TB
+  app["app.py<br/>crea el contenedor, lo cablea<br/>y registra los blueprints"]
+  account["src/account<br/>cuentas, transacciones,<br/>movimientos y operaciones"]
+  user["src/user<br/>usuarios, roles, permisos<br/>y autenticación"]
+  main["src/main<br/>DIContainer, @authenticated,<br/>Base, errores y utilidades"]
+  bd[("PostgreSQL")]
+
+  app -->|"blueprint /account"| account
+  app -->|"blueprint /user"| user
+  app -->|"DIContainer"| main
+  account -->|"titular, permisos y alcances"| user
+  account --> main
+  user --> main
+  main -.->|"@authenticated usa UserAuthenticator"| user
+  account -->|"cuentas, transacciones, movimientos"| bd
+  user -->|"usuarios, roles, permisos"| bd
 ```
 
 ```
@@ -145,6 +180,41 @@ def fund(
 2. La ruta lee el cuerpo con `json_body()` y revisa que estén los campos obligatorios.
 3. El servicio de aplicación exige el permiso, ejecuta el caso de uso y devuelve un DTO.
 4. La ruta convierte el DTO a JSON.
+
+El mismo ciclo en un fondeo (`POST /account/<cuenta_id>/fondeo`):
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor Cliente
+  participant Auth as @authenticated
+  participant Ruta as Ruta fund
+  participant Servicio as AccountFunder
+  participant Repo as AccountRepository
+  participant BD as PostgreSQL
+
+  Cliente->>Auth: POST /account/{id}/fondeo con Bearer token
+  Auth->>BD: UserAuthenticator consulta al usuario del token
+  BD-->>Auth: usuario, rol y permisos
+  Auth->>Ruta: actor (AuthenticatedUser)
+  Ruta->>Ruta: json_body() y campos obligatorios
+  Ruta->>Servicio: invoque(actor, cuenta_id, monto)
+  Servicio->>Servicio: parse_monto
+  Servicio->>Repo: find_by_ids_for_update
+  Repo->>BD: SELECT ... FOR UPDATE
+  BD-->>Repo: cuenta bloqueada
+  Servicio->>Servicio: autorizar(actor, FONDEAR, cuenta)
+  Servicio->>Repo: balance
+  Repo->>BD: créditos − débitos del principal
+  Servicio->>Servicio: Transaction.fondeo y validar (invariantes)
+  Servicio->>Repo: save_transaction
+  Repo->>BD: INSERT de la transacción y sus movimientos, COMMIT
+  Note over Repo,BD: el commit libera el bloqueo de la cuenta
+  Servicio-->>Ruta: OperationResult (DTO)
+  Ruta-->>Cliente: 201 con el JSON de la operación
+```
+
+Si el token no es válido, `@authenticated` corta en el paso 2 con 401. Si falta el permiso, el servicio lanza `PermissionDenied` en el paso 11 y la respuesta es 403; un `ValueError` del servicio (monto inválido, cuenta inexistente) sale como 400. En esos casos no se guarda nada y el bloqueo se libera al cerrar la sesión.
 
 ### Errores
 
