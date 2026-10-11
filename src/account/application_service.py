@@ -126,6 +126,34 @@ class NostroAccountOpener:
     finally:
       self.repository.close()
 
+class AccountLister:
+  """Lista de todas las cuentas con su titular (§7). No modifica nada."""
+
+  def __init__(self,repository:AccountRepository,banco_nombre:str) -> None:
+    self.repository = repository
+    self.banco_nombre = banco_nombre
+
+  def invoque(self,actor:AuthenticatedUser)->list[AccountDetail]:
+    # La lista trae cuentas de ambas clases: se exige VER sobre los dos alcances
+    if not (actor.tiene_permiso(Accion.VER, Alcance.VOSTRO) and actor.tiene_permiso(Accion.VER, Alcance.NOSTRO)):
+      raise PermissionDenied('No tiene permiso para ver la lista de cuentas')
+
+    try:
+      return [
+        AccountDetail(
+          id=account.id,
+          clase=account.clase,
+          alias=account.alias,
+          # Sin usuario titular: el titular es el nombre del banco (§7)
+          titular=account.titular.nombre if account.titular else self.banco_nombre,
+          titular_id=account.titular_id,
+          creada_en=account.creada_en
+        )
+        for account in self.repository.find_all()
+      ]
+    finally:
+      self.repository.close()
+
 # NUMERIC(18,2): hasta 16 dígitos enteros
 MONTO_MAXIMO = Decimal('9999999999999999.99')
 

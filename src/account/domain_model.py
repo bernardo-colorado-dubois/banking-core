@@ -2,7 +2,7 @@ from src.main.database import Base
 from src.user.domain_model import User, Alcance
 from sqlalchemy import CheckConstraint, Column, DateTime, ForeignKey, MetaData, Numeric, Table, UniqueConstraint, Uuid
 from sqlalchemy import DDL, Enum as SqlEnum, Row, case, event, func, select
-from sqlalchemy.orm import Mapped, mapped_column, relationship, Session
+from sqlalchemy.orm import Mapped, mapped_column, relationship, joinedload, Session
 from datetime import datetime
 from decimal import Decimal
 from enum import Enum
@@ -195,6 +195,10 @@ class AccountRepository:
 
   def find_by_id(self,id:UUID)->Account|None:
     return self.session.query(Account).filter(Account.id==id).one_or_none()
+
+  # De la más antigua a la más reciente, con el titular ya cargado
+  def find_all(self)->List[Account]:
+    return self.session.query(Account).options(joinedload(Account.titular)).order_by(Account.creada_en, Account.id).all()
 
   def find_by_titular_and_alias(self,titular_id:UUID|None,alias:str)->Account|None:
     return self.session.query(Account).filter(

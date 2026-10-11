@@ -8,6 +8,7 @@ from src.user.domain_model import UserRepository, RoleRepository
 from src.account.domain_model import AccountRepository
 from src.account.application_service import ClientSignup, VostroAccountOpener, NostroAccountOpener
 from src.account.application_service import AccountFunder, AccountWithdrawer, AccountTransfer, AccountBalanceReader
+from src.account.application_service import AccountLister
 from src.user.application_service import UserCreator, UserSignup, UserLogin, UserAuthenticator, UserProfileReader, PasswordChanger
 
 class DIContainer(DeclarativeContainer):
@@ -55,6 +56,11 @@ class DIContainer(DeclarativeContainer):
   )
   nostro_account_opener = Factory(
     NostroAccountOpener,
+    repository=account_repository,
+    banco_nombre=config.banco_nombre
+  )
+  account_lister = Factory(
+    AccountLister,
     repository=account_repository,
     banco_nombre=config.banco_nombre
   )

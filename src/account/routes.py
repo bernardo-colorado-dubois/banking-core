@@ -8,14 +8,11 @@ from src.main.middleware import authenticated
 from src.main.utils import json_body
 from src.account.application_service import ClientSignup, VostroAccountOpener, NostroAccountOpener
 from src.account.application_service import AccountFunder, AccountWithdrawer, AccountTransfer, AccountBalanceReader
+from src.account.application_service import AccountLister
 from src.account.dto import AccountDetail, OperationResult
 from src.user.dto import UserCreate, AuthenticatedUser
 
 blueprint = Blueprint("account", __name__)
-
-@blueprint.route("/")
-def hello_account():
-  return jsonify(mensaje="Hello, Account!")
 
 def texto(data: dict, campo: str) -> str | None:
   """Devuelve el campo sin espacios alrededor, o None si falta o viene vacío."""
@@ -24,8 +21,8 @@ def texto(data: dict, campo: str) -> str | None:
     return None
   return valor.strip()
 
-def account_json(account: AccountDetail):
-  return jsonify(
+def account_dict(account: AccountDetail) -> dict:
+  return dict(
     id=str(account.id),
     clase=account.clase.value,
     alias=account.alias,
@@ -33,6 +30,19 @@ def account_json(account: AccountDetail):
     titular_id=str(account.titular_id) if account.titular_id else None,
     creada_en=account.creada_en.isoformat()
   )
+
+def account_json(account: AccountDetail):
+  return jsonify(account_dict(account))
+
+# Lista de todas las cuentas, NOSTRO y VOSTRO, con su titular (§7)
+@blueprint.route("/", methods=["GET"])
+@authenticated()
+@inject
+def list_accounts(
+  actor: AuthenticatedUser,
+  account_lister: AccountLister = Provide[DIContainer.account_lister]
+):
+  return jsonify(cuentas=[account_dict(account) for account in account_lister.invoque(actor)])
 
 # §8.3 Alta de cliente con su primera cuenta VOSTRO
 @blueprint.route("/cliente", methods=["POST"])

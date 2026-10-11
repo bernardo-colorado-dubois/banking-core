@@ -2,7 +2,7 @@
 
 Core bancario mínimo en Flask + SQLAlchemy + PostgreSQL que registra cuentas y movimientos bajo partida doble, solo en MXN. La especificación completa está en `especificacion-core-bancario.md`: define **qué** se construye. Las secciones marcadas como **Pendiente** (§11) no se implementan por suposición.
 
-Estado actual: el módulo `user` (usuarios, RBAC, login con JWT, altas de admin y operador, cambio de contraseña, perfil) está implementado. El módulo `account` tiene las tablas contables (§9), las aperturas de cuenta (§8.3, §8.4, §8.13) y las operaciones: fondeo, retiro, transferencia y consulta de saldo con historial de movimientos (§8.5 a §8.12), con las invariantes de §6 y el bloqueo de filas de §10. No hay reversos ni idempotencia (pendientes de §11).
+Estado actual: el módulo `user` (usuarios, RBAC, login con JWT, altas de admin y operador, cambio de contraseña, perfil) está implementado. El módulo `account` tiene las tablas contables (§9), las aperturas de cuenta (§8.3, §8.4, §8.13) y las operaciones: fondeo, retiro, transferencia y consulta de saldo con historial de movimientos (§8.5 a §8.12), con las invariantes de §6 y el bloqueo de filas de §10, además de la lista de cuentas para operador y admin. No hay reversos ni idempotencia (pendientes de §11).
 
 ## Comandos
 
@@ -69,7 +69,7 @@ src/
 | POST | `/user/password` | `PasswordChanger` | `@authenticated(permitir_password_pendiente=True)` |
 | POST | `/user/admin` | `UserSignup` (rol `ADMIN`, §8.1) | `@authenticated()` |
 | POST | `/user/operador` | `UserSignup` (rol `OPERADOR`, §8.2) | `@authenticated()` |
-| GET | `/account/` | — | no |
+| GET | `/account/` | `AccountLister` | `@authenticated()` |
 | POST | `/account/cliente` | `ClientSignup` (§8.3) | `@authenticated()` |
 | POST | `/account/vostro` | `VostroAccountOpener` (§8.4) | `@authenticated()` |
 | POST | `/account/nostro` | `NostroAccountOpener` (§8.13) | `@authenticated()` |
@@ -78,7 +78,7 @@ src/
 | POST | `/account/<cuenta_id>/transferencia` | `AccountTransfer` (§8.7, §8.12) | `@authenticated()` |
 | GET | `/account/<cuenta_id>/saldo` | `AccountBalanceReader` (§8.8, §8.9) | `@authenticated()` |
 
-`GET /` y `GET /account/` son de prueba y responden `{"mensaje": "Hello, ...!"}`.
+`GET /` es de prueba y responde `{"mensaje": "Hello, World!"}`.
 
 Cuerpos y respuestas:
 
@@ -90,6 +90,7 @@ Cuerpos y respuestas:
 - `POST /account/vostro`: recibe `email` del cliente existente y `alias`.
 - `POST /account/nostro`: recibe `alias`.
 - Las tres aperturas devuelven 201 con `id`, `clase`, `alias`, `titular`, `titular_id`, `creada_en`. `titular` es el nombre del cliente o, en NOSTRO, `BANCO_NOMBRE` (con `titular_id` nulo).
+- `GET /account/`: devuelve `cuentas`, la lista completa de cuentas NOSTRO y VOSTRO de la más antigua a la más reciente, cada una con los mismos campos que una apertura. Sin paginación.
 - `POST /account/<cuenta_id>/fondeo` y `/retiro`: reciben `monto`.
 - `POST /account/<cuenta_id>/transferencia`: la cuenta de la ruta es el origen; recibe `cuenta_destino_id`, `monto`.
 - Las tres operaciones devuelven 201 con `transaccion_id`, `tipo`, `monto`, `cuenta_id`, `cuenta_destino_id` (nulo salvo en transferencias), `saldo` (el de `cuenta_id` después de la operación) y `creada_en`.
@@ -118,6 +119,7 @@ Módulo `account`:
 | `ClientSignup` | Exige `ABRIR_CUENTA:VOSTRO`. Crea el usuario `CLIENTE` y su cuenta en un solo commit: la cuenta se guarda con el titular nuevo en cascada. No pasa por `UserCreator`, que hace su propio commit. |
 | `VostroAccountOpener` | Exige `ABRIR_CUENTA:VOSTRO`. Rechaza email inexistente, usuario que no es `CLIENTE` o inactivo, y alias repetido para ese cliente. |
 | `NostroAccountOpener` | Exige `ABRIR_CUENTA:NOSTRO`. Rechaza alias repetido entre las cuentas del banco. |
+| `AccountLister` | Exige `VER` sobre `VOSTRO` y sobre `NOSTRO` a la vez, porque la lista trae ambas clases; por la semilla solo lo cumplen operador y admin. Devuelve todas las cuentas con su titular. No bloquea ni modifica nada. |
 | `AccountFunder`, `AccountWithdrawer` | Bloquean la cuenta, exigen `FONDEAR` o `RETIRAR` sobre su alcance, arman la transacción, validan §6 y la guardan. |
 | `AccountTransfer` | Bloquea ambas cuentas en orden de id. Exige `TRANSFERIR` solo sobre el origen; el destino solo debe existir. |
 | `AccountBalanceReader` | Exige `VER` sobre el alcance de la cuenta. Devuelve el historial de la vista `historial_cuentas`, con el saldo en cada movimiento. No bloquea ni modifica nada. |
