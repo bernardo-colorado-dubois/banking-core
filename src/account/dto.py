@@ -16,6 +16,11 @@ class AccountDetail:
   creada_en: datetime
 
 @dataclass(frozen=True)
+class AccountSummary(AccountDetail):
+  # Saldo actual del principal (§4.3)
+  saldo: Decimal
+
+@dataclass(frozen=True)
 class AccountMovement:
   movimiento_id: UUID
   transaccion_id: UUID

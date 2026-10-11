@@ -220,6 +220,14 @@ class AccountRepository:
     ).scalar()
     return Decimal(saldo).quantize(Decimal('0.01'))
 
+  # Saldo de todas las cuentas en una sola consulta; las que no tienen movimientos no aparecen
+  def balances(self)->dict[UUID,Decimal]:
+    importe = case((Movement.naturaleza==Naturaleza.CREDITO, Movement.monto), else_=-Movement.monto)
+    filas = self.session.query(Movement.cuenta_id, func.sum(importe)).filter(
+      Movement.lado==Lado.PRINCIPAL
+    ).group_by(Movement.cuenta_id).all()
+    return {cuenta_id: Decimal(saldo).quantize(Decimal('0.01')) for cuenta_id, saldo in filas}
+
   # Del movimiento más antiguo al más reciente; el saldo de la última fila es el actual
   def history(self,id:UUID)->List[Row]:
     return self.session.execute(

@@ -34,7 +34,7 @@ def account_dict(account: AccountDetail) -> dict:
 def account_json(account: AccountDetail):
   return jsonify(account_dict(account))
 
-# Lista de todas las cuentas, NOSTRO y VOSTRO, con su titular (§7)
+# Lista de todas las cuentas, NOSTRO y VOSTRO, con su titular y su saldo actual (§7)
 @blueprint.route("/", methods=["GET"])
 @authenticated()
 @inject
@@ -42,7 +42,7 @@ def list_accounts(
   actor: AuthenticatedUser,
   account_lister: AccountLister = Provide[DIContainer.account_lister]
 ):
-  return jsonify(cuentas=[account_dict(account) for account in account_lister.invoque(actor)])
+  return jsonify(cuentas=[account_dict(account) | dict(saldo=str(account.saldo)) for account in account_lister.invoque(actor)])
 
 # §8.3 Alta de cliente con su primera cuenta VOSTRO
 @blueprint.route("/cliente", methods=["POST"])

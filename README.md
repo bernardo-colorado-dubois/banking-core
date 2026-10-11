@@ -277,7 +277,7 @@ Todas las rutas reciben y devuelven JSON. Salvo las marcadas, requieren `Authori
 
 | Método | Ruta | Qué hace | Permiso |
 |---|---|---|---|
-| GET | `/account/` | Lista de todas las cuentas, NOSTRO y VOSTRO, con su titular | `VER:VOSTRO` y `VER:NOSTRO` |
+| GET | `/account/` | Lista de todas las cuentas, NOSTRO y VOSTRO, con su titular y su saldo actual | `VER:VOSTRO` y `VER:NOSTRO` |
 | POST | `/account/cliente` | Alta de cliente con su primera cuenta VOSTRO (§8.3) | `ABRIR_CUENTA:VOSTRO` |
 | POST | `/account/vostro` | Cuenta VOSTRO adicional para un cliente existente (§8.4) | `ABRIR_CUENTA:VOSTRO` |
 | POST | `/account/nostro` | Cuenta NOSTRO (§8.13) | `ABRIR_CUENTA:NOSTRO` |
@@ -357,7 +357,7 @@ En una cuenta NOSTRO, `titular` es el nombre del banco y `titular_id` es nulo.
 
 Los movimientos van del más antiguo al más reciente, completos y sin paginación. No hay un saldo global en la cabecera: el saldo actual es el del último movimiento, y una cuenta sin movimientos devuelve la lista vacía (saldo cero).
 
-`GET /account/` responde 200 con `{"cuentas": [...]}`, de la más antigua a la más reciente y sin paginación. Cada cuenta trae los mismos campos que una apertura: `id`, `clase`, `alias`, `titular`, `titular_id` y `creada_en`. Exige `VER` sobre `VOSTRO` y sobre `NOSTRO`, así que solo la ven el operador y el admin; un cliente recibe 403.
+`GET /account/` responde 200 con `{"cuentas": [...]}`, de la más antigua a la más reciente y sin paginación. Cada cuenta trae los mismos campos que una apertura (`id`, `clase`, `alias`, `titular`, `titular_id` y `creada_en`) más `saldo`, su saldo actual como texto con 2 decimales (`"0.00"` si no tiene movimientos). Exige `VER` sobre `VOSTRO` y sobre `NOSTRO`, así que solo la ven el operador y el admin; un cliente recibe 403.
 
 `GET /` es una ruta de prueba, sin token, que responde `{"mensaje": "Hello, World!"}`.
 
@@ -383,7 +383,7 @@ Cada servicio es una clase con un único método `invoque(...)`, registrada como
 | `ClientSignup` | Crea el usuario `CLIENTE` y su primera cuenta en un solo commit: se crean ambos o ninguno. |
 | `VostroAccountOpener` | Abre otra cuenta a un cliente. Rechaza email inexistente, usuario que no es cliente o está inactivo, y alias repetido para ese cliente. |
 | `NostroAccountOpener` | Abre una cuenta del banco. Rechaza alias repetido entre las NOSTRO. |
-| `AccountLister` | Exige `VER` sobre `VOSTRO` y sobre `NOSTRO` y devuelve todas las cuentas con su titular. No bloquea ni modifica nada. |
+| `AccountLister` | Exige `VER` sobre `VOSTRO` y sobre `NOSTRO` y devuelve todas las cuentas con su titular y su saldo actual. No bloquea ni modifica nada. |
 | `AccountFunder` | Fondeo: bloquea la cuenta, exige `FONDEAR`, arma la transacción, la valida y la guarda. |
 | `AccountWithdrawer` | Retiro: igual que el fondeo, con `RETIRAR`. Sin fondos suficientes, la validación lo rechaza. |
 | `AccountTransfer` | Transferencia: bloquea ambas cuentas en orden de id y exige `TRANSFERIR` solo sobre el origen. |

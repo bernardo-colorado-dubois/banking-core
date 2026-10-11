@@ -51,7 +51,7 @@ src/
 │   └── routes.py
 └── account/
     ├── domain_model.py      # enums, Account, Transaction (movimientos e invariantes), Movement, vista historial_cuentas y AccountRepository
-    ├── dto.py               # AccountDetail, AccountBalance, AccountMovement, OperationResult
+    ├── dto.py               # AccountDetail, AccountSummary, AccountBalance, AccountMovement, OperationResult
     ├── application_service.py
     └── routes.py
 ```
@@ -90,7 +90,7 @@ Cuerpos y respuestas:
 - `POST /account/vostro`: recibe `email` del cliente existente y `alias`.
 - `POST /account/nostro`: recibe `alias`.
 - Las tres aperturas devuelven 201 con `id`, `clase`, `alias`, `titular`, `titular_id`, `creada_en`. `titular` es el nombre del cliente o, en NOSTRO, `BANCO_NOMBRE` (con `titular_id` nulo).
-- `GET /account/`: devuelve `cuentas`, la lista completa de cuentas NOSTRO y VOSTRO de la más antigua a la más reciente, cada una con los mismos campos que una apertura. Sin paginación.
+- `GET /account/`: devuelve `cuentas`, la lista completa de cuentas NOSTRO y VOSTRO de la más antigua a la más reciente, cada una con los mismos campos que una apertura más `saldo`, su saldo actual (`"0.00"` si no tiene movimientos). Sin paginación.
 - `POST /account/<cuenta_id>/fondeo` y `/retiro`: reciben `monto`.
 - `POST /account/<cuenta_id>/transferencia`: la cuenta de la ruta es el origen; recibe `cuenta_destino_id`, `monto`.
 - Las tres operaciones devuelven 201 con `transaccion_id`, `tipo`, `monto`, `cuenta_id`, `cuenta_destino_id` (nulo salvo en transferencias), `saldo` (el de `cuenta_id` después de la operación) y `creada_en`.
@@ -119,7 +119,7 @@ Módulo `account`:
 | `ClientSignup` | Exige `ABRIR_CUENTA:VOSTRO`. Crea el usuario `CLIENTE` y su cuenta en un solo commit: la cuenta se guarda con el titular nuevo en cascada. No pasa por `UserCreator`, que hace su propio commit. |
 | `VostroAccountOpener` | Exige `ABRIR_CUENTA:VOSTRO`. Rechaza email inexistente, usuario que no es `CLIENTE` o inactivo, y alias repetido para ese cliente. |
 | `NostroAccountOpener` | Exige `ABRIR_CUENTA:NOSTRO`. Rechaza alias repetido entre las cuentas del banco. |
-| `AccountLister` | Exige `VER` sobre `VOSTRO` y sobre `NOSTRO` a la vez, porque la lista trae ambas clases; por la semilla solo lo cumplen operador y admin. Devuelve todas las cuentas con su titular. No bloquea ni modifica nada. |
+| `AccountLister` | Exige `VER` sobre `VOSTRO` y sobre `NOSTRO` a la vez, porque la lista trae ambas clases; por la semilla solo lo cumplen operador y admin. Devuelve todas las cuentas con su titular y su saldo actual; los saldos salen de una sola consulta agrupada (`balances`), no de una por cuenta. No bloquea ni modifica nada. |
 | `AccountFunder`, `AccountWithdrawer` | Bloquean la cuenta, exigen `FONDEAR` o `RETIRAR` sobre su alcance, arman la transacción, validan §6 y la guardan. |
 | `AccountTransfer` | Bloquea ambas cuentas en orden de id. Exige `TRANSFERIR` solo sobre el origen; el destino solo debe existir. |
 | `AccountBalanceReader` | Exige `VER` sobre el alcance de la cuenta. Devuelve el historial de la vista `historial_cuentas`, con el saldo en cada movimiento. No bloquea ni modifica nada. |

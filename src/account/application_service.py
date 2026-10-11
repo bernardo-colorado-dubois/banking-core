@@ -2,7 +2,7 @@ from decimal import Decimal, InvalidOperation
 from uuid import UUID
 
 from src.account.domain_model import Account, AccountRepository, ClaseCuenta, Transaction
-from src.account.dto import AccountDetail, AccountBalance, AccountMovement, OperationResult
+from src.account.dto import AccountDetail, AccountSummary, AccountBalance, AccountMovement, OperationResult
 from src.user.domain_model import User, UserRepository, RoleRepository, Accion, Alcance
 from src.user.dto import UserCreate, AuthenticatedUser
 from src.main.errors import PermissionDenied
@@ -127,29 +127,33 @@ class NostroAccountOpener:
       self.repository.close()
 
 class AccountLister:
-  """Lista de todas las cuentas con su titular (§7). No modifica nada."""
+  """Lista de todas las cuentas con su titular y su saldo actual (§7). No modifica nada."""
 
   def __init__(self,repository:AccountRepository,banco_nombre:str) -> None:
     self.repository = repository
     self.banco_nombre = banco_nombre
 
-  def invoque(self,actor:AuthenticatedUser)->list[AccountDetail]:
+  def invoque(self,actor:AuthenticatedUser)->list[AccountSummary]:
     # La lista trae cuentas de ambas clases: se exige VER sobre los dos alcances
     if not (actor.tiene_permiso(Accion.VER, Alcance.VOSTRO) and actor.tiene_permiso(Accion.VER, Alcance.NOSTRO)):
       raise PermissionDenied('No tiene permiso para ver la lista de cuentas')
 
     try:
+      cuentas = self.repository.find_all()
+      saldos = self.repository.balances()
       return [
-        AccountDetail(
+        AccountSummary(
           id=account.id,
           clase=account.clase,
           alias=account.alias,
           # Sin usuario titular: el titular es el nombre del banco (§7)
           titular=account.titular.nombre if account.titular else self.banco_nombre,
           titular_id=account.titular_id,
-          creada_en=account.creada_en
+          creada_en=account.creada_en,
+          # Una cuenta sin movimientos tiene saldo cero
+          saldo=saldos.get(account.id, Decimal('0.00'))
         )
-        for account in self.repository.find_all()
+        for account in cuentas
       ]
     finally:
       self.repository.close()
