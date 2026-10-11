@@ -17,6 +17,7 @@ database_url = os.getenv("DATABASE_URL")
 jwt_secret = os.getenv("JWT_SECRET")
 jwt_expiracion_minutos = int(os.getenv("JWT_EXPIRACION_MINUTOS", "20"))
 banco_nombre = os.getenv("BANCO_NOMBRE")
+port = int(os.getenv("PORT", "8080"))
 
 # Inicializar el contenedor
 container = DIContainer()
@@ -41,4 +42,4 @@ app.register_blueprint(account_routes.blueprint, url_prefix='/account')
 
 # Solo ejecutar el servidor si se llama directamente
 if __name__ == "__main__":
-  app.run(debug=True,port=8080)
+  app.run(debug=True,port=port)

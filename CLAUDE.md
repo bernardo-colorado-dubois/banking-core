@@ -9,7 +9,7 @@ Estado actual: el módulo `user` (usuarios, RBAC, login con JWT, altas de admin 
 ```bash
 docker compose up -d            # PostgreSQL 17 (se requiere 15+ por UNIQUE NULLS NOT DISTINCT)
 venv/bin/python create_admin.py # DESTRUCTIVO: borra y recrea todas las tablas, siembra roles/permisos y el primer admin
-venv/bin/python app.py          # servidor de desarrollo en http://localhost:8080
+venv/bin/python app.py          # servidor de desarrollo en http://localhost:8080 (o el puerto de PORT)
 ```
 
 - `create_admin.py` hace `drop_all` + `create_all`, que también borran y crean la vista `historial_cuentas`. Es la única forma de crear el esquema hoy; no hay migraciones (`migrations/` está vacío, Alembic es un pendiente de §11).
@@ -26,6 +26,7 @@ Se cargan de `.env` con `python-dotenv`. `.env` no se versiona; se crea copiando
 | `DATABASE_URL` | Cadena de conexión de SQLAlchemy (`postgresql+psycopg://...`) |
 | `JWT_SECRET` | Clave de firma HS256 |
 | `JWT_EXPIRACION_MINUTOS` | Duración del access token, 20 por defecto |
+| `PORT` | Puerto del servidor de desarrollo, 8080 por defecto |
 | `BANCO_NOMBRE` | Titular que se muestra en las cuentas NOSTRO (§7) |
 | `ADMIN_EMAIL`, `ADMIN_PASSWORD` | Primer admin que crea `create_admin.py` |
 

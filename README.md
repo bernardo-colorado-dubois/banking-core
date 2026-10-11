@@ -60,7 +60,7 @@ docker compose up -d
 # 4. Esquema, roles, permisos y primer admin
 venv/bin/python create_admin.py
 
-# 5. Servidor de desarrollo en http://localhost:8080
+# 5. Servidor de desarrollo en http://localhost:8080 (o el puerto de PORT)
 venv/bin/python app.py
 ```
 
@@ -74,6 +74,7 @@ venv/bin/python app.py
 | `DATABASE_URL` | Cadena de conexión de SQLAlchemy (`postgresql+psycopg://...`) |
 | `JWT_SECRET` | Clave de firma HS256 |
 | `JWT_EXPIRACION_MINUTOS` | Duración del access token, 20 por defecto |
+| `PORT` | Puerto del servidor de desarrollo, 8080 por defecto |
 | `BANCO_NOMBRE` | Titular que se muestra en las cuentas NOSTRO |
 | `ADMIN_EMAIL`, `ADMIN_PASSWORD` | Primer admin que crea `create_admin.py` |
 
