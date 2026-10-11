@@ -18,6 +18,7 @@ La especificación completa está en [`especificacion-core-bancario.md`](especif
 - [Concurrencia](#concurrencia)
 - [Ejemplo de punta a punta](#ejemplo-de-punta-a-punta)
 - [Pendientes](#pendientes)
+- [Licencia](#licencia)
 
 ## Funcionalidades
 
@@ -594,3 +595,7 @@ Siguen abiertos en §11 de la especificación y no están implementados:
 - Pruebas automatizadas: `tests/` está vacío. Para verificar una ruta se usa `app.test_client()`.
 - Servicios para desactivar usuarios o cambiarles el rol.
 - Paginación del historial de movimientos.
+
+## Licencia
+
+Distribuido bajo la licencia MIT. El texto completo está en [`LICENSE`](LICENSE).
