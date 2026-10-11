@@ -1,0 +1,409 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Core bancario · Partida doble en Flask y PostgreSQL</title>
+  <meta name="description" content="Core bancario mínimo en Flask, SQLAlchemy y PostgreSQL que registra cuentas y movimientos bajo partida doble. El saldo no se guarda: se calcula.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0A1120; --ink: #EDF2FB; --muted: #93A3BF; --line: rgba(255, 255, 255, .10);
+      --card: rgba(255, 255, 255, .045); --green: #34D399; --amber: #FBBF24; --blue: #7AA2FF;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; scroll-padding-top: 84px; }
+    body {
+      font-family: 'Inter', system-ui, sans-serif; color: var(--ink); background: var(--bg);
+      line-height: 1.55; -webkit-font-smoothing: antialiased; overflow-x: hidden;
+    }
+    a { color: inherit; text-decoration: none; }
+    code, pre, .mono { font-family: 'JetBrains Mono', ui-monospace, monospace; }
+    .wrap { width: 100%; max-width: 1120px; margin: 0 auto; padding: 0 24px; }
+
+    /* Navegación */
+    header {
+      position: sticky; top: 0; z-index: 10; border-bottom: 1px solid var(--line);
+      background: rgba(10, 17, 32, .82); backdrop-filter: blur(14px);
+    }
+    nav { display: flex; align-items: center; justify-content: space-between; height: 64px; }
+    .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; letter-spacing: -.01em; }
+    .brand i { width: 10px; height: 10px; border-radius: 50%; background: var(--green); box-shadow: 0 0 14px var(--green); }
+    .links { display: flex; gap: 28px; font-size: 15px; color: var(--muted); font-weight: 500; }
+    .links a:hover { color: var(--ink); }
+
+    /* Hero */
+    .hero { position: relative; padding: 88px 0 72px; }
+    .hero::before {
+      content: ""; position: absolute; inset: -64px 0 0; pointer-events: none; z-index: -1;
+      background:
+        radial-gradient(760px 520px at 88% 0%, rgba(52, 211, 153, .20), transparent 62%),
+        radial-gradient(720px 560px at 0% 100%, rgba(122, 162, 255, .18), transparent 60%);
+    }
+    .hero .wrap { display: grid; grid-template-columns: 1.15fr .85fr; gap: 48px; align-items: center; }
+    .tag {
+      display: inline-flex; align-items: center; gap: 10px; font-size: 12.5px; font-weight: 700; letter-spacing: .14em;
+      color: var(--green); border: 1px solid rgba(52, 211, 153, .4); background: rgba(52, 211, 153, .09);
+      padding: 7px 14px; border-radius: 999px;
+    }
+    h1 { font-size: clamp(34px, 4.1vw, 50px); line-height: 1.04; font-weight: 800; letter-spacing: -.035em; margin-top: 22px; text-transform: uppercase; }
+    h1 em, h2 em { font-style: normal; color: var(--green); white-space: nowrap; }
+    .lead { font-size: 19px; color: var(--muted); margin-top: 20px; max-width: 34em; }
+    .lead b, p b, .inv b { color: var(--ink); font-weight: 600; }
+    .cta { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 30px; }
+    .btn { display: inline-block; font-weight: 700; font-size: 15.5px; padding: 13px 22px; border-radius: 12px; border: 1px solid var(--line); background: var(--card); }
+    .btn:hover { border-color: rgba(255, 255, 255, .28); }
+    .btn.primary { background: var(--green); color: #052016; border-color: var(--green); }
+    .btn.primary:hover { filter: brightness(1.08); }
+
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: 18px; }
+    .pill { display: inline-block; font-size: 11.5px; font-weight: 700; letter-spacing: .08em; padding: 4px 9px; border-radius: 6px; }
+    .cr { color: var(--green); background: rgba(52, 211, 153, .13); }
+    .db { color: var(--amber); background: rgba(251, 191, 36, .13); }
+    .g { color: var(--green); } .a { color: var(--amber); }
+
+    /* Historial de ejemplo */
+    .ledger { overflow: hidden; box-shadow: 0 30px 80px -30px rgba(0, 0, 0, .7); }
+    .ledger .lh { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--line); }
+    .ledger .lh b { font-size: 16px; } .ledger .lh b span { color: var(--muted); font-weight: 500; }
+    .ledger .lh code { font-size: 12px; color: var(--muted); white-space: nowrap; }
+    .row { display: grid; grid-template-columns: 1.3fr 1fr 1fr 1fr; align-items: center; padding: 14px 20px; font-size: 15.5px; }
+    .row + .row { border-top: 1px solid rgba(255, 255, 255, .06); }
+    .row.h { font-size: 11px; letter-spacing: .14em; color: var(--muted); font-weight: 700; padding: 10px 20px; background: rgba(255, 255, 255, .03); }
+    .row > :nth-child(n+3) { text-align: right; }
+    .row > :first-child { font-weight: 600; } .row > :last-child { font-weight: 700; }
+    .formula { padding: 14px 20px; border-top: 1px solid var(--line); font-size: 14px; color: var(--muted); background: rgba(52, 211, 153, .06); }
+    .formula b { color: var(--green); }
+
+    /* Cifras */
+    .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; padding-bottom: 24px; }
+    .stat { padding: 20px 22px; }
+    .stat .n { font-size: 44px; font-weight: 800; letter-spacing: -.04em; line-height: 1; color: var(--green); }
+    .stat .l { font-size: 14.5px; color: var(--muted); margin-top: 8px; line-height: 1.35; }
+
+    /* Secciones */
+    section { padding: 72px 0; }
+    section + section { border-top: 1px solid var(--line); }
+    .eyebrow { font-size: 12.5px; font-weight: 700; letter-spacing: .14em; color: var(--green); }
+    h2 { font-size: clamp(28px, 3.6vw, 40px); line-height: 1.1; font-weight: 800; letter-spacing: -.03em; margin-top: 10px; }
+    .intro { font-size: 17.5px; color: var(--muted); margin-top: 14px; max-width: 44em; }
+    .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 36px; }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 36px; }
+    .feat { padding: 22px; }
+    .feat h3 { font-size: 17.5px; font-weight: 700; letter-spacing: -.01em; }
+    .feat p { font-size: 15px; color: var(--muted); margin-top: 8px; }
+    .feat code { font-size: 13px; color: var(--ink); }
+
+    /* Modelo contable */
+    .cap { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 16px; margin-top: 36px; font-weight: 700; }
+    .cap span { color: var(--muted); font-weight: 500; font-size: 14.5px; }
+    .pair { display: grid; grid-template-columns: 1fr 44px 1fr; align-items: center; margin-top: 12px; }
+    .acct { overflow: hidden; }
+    .acct .hd { padding: 13px 18px; font-weight: 700; border-bottom: 1px solid var(--line); }
+    .acct .hd span { color: var(--muted); font-weight: 500; }
+    .side { display: flex; justify-content: space-between; align-items: center; padding: 12px 18px; }
+    .side + .side { border-top: 1px solid rgba(255, 255, 255, .06); }
+    .side .nm { font-size: 11px; letter-spacing: .12em; font-weight: 700; color: var(--muted); margin-bottom: 5px; }
+    .side .v { font-size: 22px; font-weight: 700; }
+    .zero { padding: 10px 18px; font-size: 12.5px; color: var(--green); background: rgba(52, 211, 153, .07); border-top: 1px solid var(--line); }
+    .arrow { text-align: center; font-size: 26px; color: var(--muted); }
+    .op { padding: 18px 20px; }
+    .op h3 { font-size: 17px; display: flex; justify-content: space-between; align-items: baseline; }
+    .op h3 span { font-size: 13px; color: var(--muted); font-weight: 500; }
+    .op div { display: flex; align-items: center; gap: 10px; font-size: 15px; margin-top: 9px; }
+    .inv { margin-top: 16px; padding: 4px 22px; }
+    .inv li { list-style: none; display: flex; align-items: center; gap: 14px; padding: 12px 0; font-size: 15.5px; color: var(--muted); }
+    .inv li + li { border-top: 1px solid rgba(255, 255, 255, .06); }
+    .inv .n, .st .n { flex: none; display: grid; place-items: center; font-weight: 800; color: var(--green); }
+    .inv .n { width: 26px; height: 26px; border-radius: 7px; background: rgba(52, 211, 153, .14); font-size: 13.5px; }
+
+    /* Arquitectura */
+    .steps { margin-top: 36px; position: relative; }
+    .steps::before { content: ""; position: absolute; left: 19px; top: 20px; bottom: 20px; width: 2px; background: linear-gradient(var(--blue), var(--green)); }
+    .st { display: grid; grid-template-columns: 40px 1fr; gap: 18px; padding: 10px 0; }
+    .st .n { width: 40px; height: 40px; border-radius: 50%; background: #101A30; border: 2px solid var(--green); font-size: 16px; position: relative; }
+    .st h3 { font-size: 16.5px; font-weight: 700; }
+    .st h3 small { font-family: 'Inter', sans-serif; font-size: 11px; letter-spacing: .12em; color: var(--muted); margin-left: 10px; }
+    .st p { font-size: 15.5px; color: var(--muted); margin-top: 3px; }
+
+    /* Tablas */
+    .tbl { margin-top: 36px; overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 15px; min-width: 640px; }
+    th { text-align: left; font-size: 11.5px; letter-spacing: .12em; color: var(--muted); font-weight: 700; padding: 13px 18px; background: rgba(255, 255, 255, .03); }
+    td { padding: 13px 18px; border-top: 1px solid rgba(255, 255, 255, .07); color: var(--muted); vertical-align: top; }
+    td code { font-size: 13.5px; color: var(--ink); }
+    td.c, th.c { text-align: center; }
+    .ok { color: var(--green); font-weight: 800; }
+    .m { display: inline-block; min-width: 46px; text-align: center; font-family: 'JetBrains Mono', monospace; font-size: 11.5px; font-weight: 700; padding: 3px 7px; border-radius: 6px; }
+    .get { color: var(--blue); background: rgba(122, 162, 255, .14); }
+    .post { color: var(--green); background: rgba(52, 211, 153, .13); }
+
+    /* Puesta en marcha */
+    pre { margin-top: 36px; padding: 22px 24px; overflow-x: auto; font-size: 14px; line-height: 1.75; color: var(--ink); }
+    pre .c { color: var(--muted); }
+    .warn { margin-top: 16px; padding: 16px 20px; border-radius: 14px; border: 1px solid rgba(251, 191, 36, .35); background: rgba(251, 191, 36, .07); font-size: 15px; color: var(--muted); }
+    .warn b { color: var(--amber); }
+    .chips { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 24px; }
+    .chip { font-size: 14.5px; font-weight: 600; padding: 7px 14px; border-radius: 999px; border: 1px solid var(--line); background: var(--card); }
+    .todo { margin-top: 36px; padding: 6px 22px; }
+    .todo li { list-style: none; padding: 12px 0 12px 26px; position: relative; font-size: 15.5px; color: var(--muted); }
+    .todo li + li { border-top: 1px solid rgba(255, 255, 255, .06); }
+    .todo li::before { content: ""; position: absolute; left: 2px; top: 18px; width: 12px; height: 12px; border-radius: 4px; border: 2px solid var(--muted); }
+
+    footer { border-top: 1px solid var(--line); padding: 32px 0 48px; font-size: 14.5px; color: var(--muted); }
+    footer .wrap { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 24px; }
+    footer b { color: var(--ink); }
+
+    @media (max-width: 900px) {
+      .links { display: none; }
+      .hero { padding: 56px 0 48px; }
+      .hero .wrap { grid-template-columns: 1fr; gap: 40px; }
+      .stats { grid-template-columns: 1fr 1fr; }
+      .grid3, .grid2 { grid-template-columns: 1fr; }
+      .pair { grid-template-columns: 1fr; gap: 6px; }
+      .arrow { transform: rotate(90deg); }
+      section { padding: 56px 0; }
+    }
+    @media (max-width: 480px) {
+      .wrap { padding: 0 16px; }
+      .row { grid-template-columns: 1.25fr .95fr .9fr .9fr; padding: 13px 14px; font-size: 13.5px; }
+      .row.h { padding: 10px 14px; font-size: 10px; letter-spacing: .08em; }
+      .ledger .lh code { display: none; }
+      .pill { font-size: 10.5px; padding: 3px 6px; }
+      .fit table { min-width: 0; font-size: 13.5px; }
+      .fit th, .fit td { padding: 11px 6px; }
+      .fit th:first-child, .fit td:first-child { padding-left: 14px; }
+      .fit th { font-size: 9.5px; letter-spacing: .06em; }
+      .fit td code { font-size: 12px; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <nav class="wrap">
+    <a class="brand" href="#"><i></i>Core bancario</a>
+    <div class="links">
+      <a href="#funcionalidades">Funcionalidades</a>
+      <a href="#modelo">Modelo contable</a>
+      <a href="#arquitectura">Arquitectura</a>
+      <a href="#permisos">Permisos</a>
+      <a href="#api">API</a>
+      <a href="#empezar">Empezar</a>
+    </div>
+  </nav>
+</header>
+
+<main>
+  <div class="hero">
+    <div class="wrap">
+      <div>
+        <span class="tag">PARTIDA DOBLE · SOLO MXN</span>
+        <h1>Un core bancario donde el saldo <em>se calcula</em></h1>
+        <p class="lead">No se guarda en ninguna columna. Cada peso entra y sale con movimientos balanceados bajo <b>partida doble</b>, y ninguno se edita ni se borra.</p>
+        <div class="cta">
+          <a class="btn primary" href="#empezar">Puesta en marcha</a>
+          <a class="btn" href="#api">Ver la API</a>
+        </div>
+      </div>
+      <div class="card ledger">
+        <div class="lh"><b>Ahorro <span>· cuenta VOSTRO</span></b><code>GET /account/{id}/saldo</code></div>
+        <div class="row h"><div>TIPO</div><div>NATURALEZA</div><div>MONTO</div><div>SALDO</div></div>
+        <div class="row"><div>Fondeo</div><div><span class="pill cr">CRÉDITO</span></div><div class="mono g">+1000.00</div><div class="mono">1000.00</div></div>
+        <div class="row"><div>Retiro</div><div><span class="pill db">DÉBITO</span></div><div class="mono a">−250.50</div><div class="mono">749.50</div></div>
+        <div class="row"><div>Transferencia</div><div><span class="pill db">DÉBITO</span></div><div class="mono a">−100.00</div><div class="mono">649.50</div></div>
+        <div class="formula mono"><b>saldo</b> = créditos − débitos del principal</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="wrap stats">
+    <div class="card stat"><div class="n">0</div><div class="l">columnas de saldo en la base de datos</div></div>
+    <div class="card stat"><div class="n">5</div><div class="l">invariantes validadas antes de persistir</div></div>
+    <div class="card stat"><div class="n">3</div><div class="l">roles con permisos de acción y alcance</div></div>
+    <div class="card stat"><div class="n">13</div><div class="l">endpoints JSON para usuarios y cuentas</div></div>
+  </div>
+
+  <section id="funcionalidades">
+    <div class="wrap">
+      <div class="eyebrow">FUNCIONALIDADES</div>
+      <h2>Lo que ya hace</h2>
+      <p class="intro">Un core mínimo, pero con las piezas que importan: acceso, cuentas, operaciones y un libro que siempre cuadra.</p>
+      <div class="grid3">
+        <div class="card feat"><h3>Usuarios y acceso</h3><p>Login con JWT, cambio de contraseña obligatorio en el primer ingreso, perfil y alta de administradores y operadores.</p></div>
+        <div class="card feat"><h3>Permisos, nunca roles</h3><p>Tres roles fijos, cada uno con permisos de la forma <i>(acción, alcance)</i>. La autorización nunca pregunta por el rol.</p></div>
+        <div class="card feat"><h3>Apertura de cuentas</h3><p>Alta de cliente con su primera cuenta, cuentas adicionales para un cliente existente y cuentas propias del banco.</p></div>
+        <div class="card feat"><h3>Operaciones atómicas</h3><p>Fondeo, retiro y transferencia entre cuentas del mismo banco: se registran todos sus movimientos o ninguno.</p></div>
+        <div class="card feat"><h3>Saldo e historial</h3><p>Los movimientos de una cuenta con el saldo que dejó cada uno, calculado en SQL por la vista <code>historial_cuentas</code>.</p></div>
+        <div class="card feat"><h3>Concurrencia segura</h3><p>Bloqueo de filas con <code>SELECT … FOR UPDATE</code> para que dos operaciones simultáneas no gasten el mismo saldo.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="modelo">
+    <div class="wrap">
+      <div class="eyebrow">MODELO CONTABLE</div>
+      <h2>Cada cuenta cuadra <em>consigo misma</em></h2>
+      <p class="intro">Toda cuenta tiene dos lados en el libro: el <b>principal</b>, que es el saldo que ve el titular, y la <b>contrapartida</b>, que representa el exterior. El principal es de naturaleza acreedora: un crédito lo aumenta y un débito lo disminuye.</p>
+
+      <div class="cap">Transferencia de 100.00 de A a B <span>4 movimientos · 1 transacción atómica</span></div>
+      <div class="pair">
+        <div class="card acct">
+          <div class="hd">Cuenta A <span>· origen</span></div>
+          <div class="side"><div><div class="nm">PRINCIPAL</div><span class="pill db">DÉBITO</span></div><div class="v mono a">−100.00</div></div>
+          <div class="side"><div><div class="nm">CONTRAPARTIDA</div><span class="pill cr">CRÉDITO</span></div><div class="v mono g">+100.00</div></div>
+          <div class="zero mono">principal + contrapartida = 0</div>
+        </div>
+        <div class="arrow">→</div>
+        <div class="card acct">
+          <div class="hd">Cuenta B <span>· destino</span></div>
+          <div class="side"><div><div class="nm">PRINCIPAL</div><span class="pill cr">CRÉDITO</span></div><div class="v mono g">+100.00</div></div>
+          <div class="side"><div><div class="nm">CONTRAPARTIDA</div><span class="pill db">DÉBITO</span></div><div class="v mono a">−100.00</div></div>
+          <div class="zero mono">principal + contrapartida = 0</div>
+        </div>
+      </div>
+
+      <div class="grid2" style="margin-top:16px">
+        <div class="card op"><h3>Fondeo <span>2 movimientos</span></h3>
+          <div><span class="pill cr">CRÉDITO</span> al principal</div>
+          <div><span class="pill db">DÉBITO</span> a la contrapartida</div></div>
+        <div class="card op"><h3>Retiro <span>2 movimientos</span></h3>
+          <div><span class="pill db">DÉBITO</span> al principal</div>
+          <div><span class="pill cr">CRÉDITO</span> a la contrapartida</div></div>
+      </div>
+
+      <ul class="card inv">
+        <li><span class="n">1</span><span><b>Balance de la transacción:</b> la suma de débitos es igual a la suma de créditos.</span></li>
+        <li><span class="n">2</span><span><b>Balance por cuenta:</b> en cada cuenta, principal + contrapartida = 0.</span></li>
+        <li><span class="n">3</span><span><b>Sin saldos negativos:</b> los retiros y transferencias sin fondos se rechazan.</span></li>
+        <li><span class="n">4</span><span><b>Montos positivos:</b> la dirección la da la naturaleza, débito o crédito.</span></li>
+        <li><span class="n">5</span><span><b>Transferencias:</b> el origen y el destino son cuentas distintas.</span></li>
+      </ul>
+    </div>
+  </section>
+
+  <section id="arquitectura">
+    <div class="wrap">
+      <div class="eyebrow">ARQUITECTURA</div>
+      <h2>El viaje de un <em>fondeo</em></h2>
+      <p class="intro">El código se organiza por módulos de negocio, <code>user</code> y <code>account</code>, y las dependencias apuntan hacia el dominio. Esto es lo que pasa en <code>POST /account/{id}/fondeo</code>:</p>
+
+      <div class="steps">
+        <div class="st"><div class="n">1</div><div><h3 class="mono">@authenticated <small>JWT</small></h3><p>Valida el token y consulta al usuario <b>en cada solicitud</b>: una desactivación surte efecto de inmediato.</p></div></div>
+        <div class="st"><div class="n">2</div><div><h3 class="mono">routes.py <small>RUTA</small></h3><p>Lee el JSON y revisa los campos obligatorios. <b>Sin reglas de negocio.</b></p></div></div>
+        <div class="st"><div class="n">3</div><div><h3 class="mono">SELECT … FOR UPDATE <small>BLOQUEO</small></h3><p>Bloquea la cuenta <b>antes</b> de calcular el saldo: dos operaciones simultáneas no gastan el mismo dinero.</p></div></div>
+        <div class="st"><div class="n">4</div><div><h3 class="mono">autorizar(acción, alcance) <small>RBAC</small></h3><p><b>Permisos, nunca roles:</b> FONDEAR sobre cuentas propias, de clientes o del banco.</p></div></div>
+        <div class="st"><div class="n">5</div><div><h3 class="mono">Transaction.validar() <small>DOMINIO</small></h3><p>Arma los movimientos y aplica las <b>5 invariantes</b> antes de persistir.</p></div></div>
+        <div class="st"><div class="n">6</div><div><h3 class="mono">COMMIT <small>POSTGRESQL</small></h3><p>Transacción y movimientos en <b>un solo commit</b>, que libera el bloqueo.</p></div></div>
+      </div>
+
+      <div class="grid3">
+        <div class="card feat"><h3>Sin float</h3><p><code>Decimal</code> en Python y <code>NUMERIC(18,2)</code> en la base. La API devuelve los montos como texto con 2 decimales.</p></div>
+        <div class="card feat"><h3>Sin deadlocks</h3><p>Una transferencia bloquea ambas cuentas siempre en el mismo orden, por <code>id</code>.</p></div>
+        <div class="card feat"><h3>Un servicio por operación</h3><p>No uno por rol: el mismo <code>AccountFunder</code> atiende al cliente y al admin. La diferencia la resuelve el alcance de la cuenta.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="permisos">
+    <div class="wrap">
+      <div class="eyebrow">ROLES Y PERMISOS</div>
+      <h2>Un permiso es el par <em>(acción, alcance)</em></h2>
+      <p class="intro">Los alcances son <code>PROPIAS</code> (las cuentas del usuario autenticado), <code>VOSTRO</code> (cualquier cuenta de cliente) y <code>NOSTRO</code> (las cuentas del banco). En una transferencia el permiso se evalúa solo sobre la cuenta origen.</p>
+      <div class="card tbl fit">
+        <table>
+          <tr><th>PERMISO</th><th class="c">CLIENTE</th><th class="c">OPERADOR</th><th class="c">ADMIN</th></tr>
+          <tr><td><code>VER</code>, <code>FONDEAR</code>, <code>RETIRAR</code>, <code>TRANSFERIR</code> sobre <code>PROPIAS</code></td><td class="c ok">✓</td><td></td><td></td></tr>
+          <tr><td><code>VER</code> sobre <code>VOSTRO</code></td><td></td><td class="c ok">✓</td><td class="c ok">✓</td></tr>
+          <tr><td><code>FONDEAR</code>, <code>RETIRAR</code>, <code>TRANSFERIR</code> sobre <code>VOSTRO</code></td><td></td><td></td><td class="c ok">✓</td></tr>
+          <tr><td><code>ABRIR_CUENTA</code> sobre <code>VOSTRO</code></td><td></td><td class="c ok">✓</td><td class="c ok">✓</td></tr>
+          <tr><td><code>VER</code>, <code>FONDEAR</code>, <code>RETIRAR</code>, <code>TRANSFERIR</code> sobre <code>NOSTRO</code></td><td></td><td class="c ok">✓</td><td class="c ok">✓</td></tr>
+          <tr><td><code>ABRIR_CUENTA</code> sobre <code>NOSTRO</code></td><td></td><td class="c ok">✓</td><td class="c ok">✓</td></tr>
+          <tr><td><code>GESTIONAR_USUARIOS</code></td><td></td><td></td><td class="c ok">✓</td></tr>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section id="api">
+    <div class="wrap">
+      <div class="eyebrow">API</div>
+      <h2>13 endpoints, todos en JSON</h2>
+      <p class="intro">Salvo el login, todas las rutas requieren <code>Authorization: Bearer &lt;token&gt;</code>. Los errores salen como <code>{"error": "..."}</code> con 400, 401 o 403.</p>
+      <div class="card tbl">
+        <table>
+          <tr><th>MÉTODO</th><th>RUTA</th><th>QUÉ HACE</th><th>PERMISO</th></tr>
+          <tr><td><span class="m post">POST</span></td><td><code>/user/login</code></td><td>Inicia sesión</td><td>Sin token</td></tr>
+          <tr><td><span class="m get">GET</span></td><td><code>/user/</code></td><td>Perfil del usuario autenticado</td><td>Cualquier usuario</td></tr>
+          <tr><td><span class="m post">POST</span></td><td><code>/user/password</code></td><td>Cambia la contraseña</td><td>Cualquier usuario</td></tr>
+          <tr><td><span class="m post">POST</span></td><td><code>/user/admin</code></td><td>Alta de administrador</td><td><code>GESTIONAR_USUARIOS</code></td></tr>
+          <tr><td><span class="m post">POST</span></td><td><code>/user/operador</code></td><td>Alta de operador</td><td><code>GESTIONAR_USUARIOS</code></td></tr>
+          <tr><td><span class="m get">GET</span></td><td><code>/account/</code></td><td>Todas las cuentas con su titular y su saldo actual</td><td><code>VER:VOSTRO</code> y <code>VER:NOSTRO</code></td></tr>
+          <tr><td><span class="m post">POST</span></td><td><code>/account/cliente</code></td><td>Alta de cliente con su primera cuenta VOSTRO</td><td><code>ABRIR_CUENTA:VOSTRO</code></td></tr>
+          <tr><td><span class="m post">POST</span></td><td><code>/account/vostro</code></td><td>Cuenta VOSTRO adicional para un cliente</td><td><code>ABRIR_CUENTA:VOSTRO</code></td></tr>
+          <tr><td><span class="m post">POST</span></td><td><code>/account/nostro</code></td><td>Cuenta propia del banco</td><td><code>ABRIR_CUENTA:NOSTRO</code></td></tr>
+          <tr><td><span class="m post">POST</span></td><td><code>/account/{id}/fondeo</code></td><td>Fondeo</td><td><code>FONDEAR</code> sobre el alcance de la cuenta</td></tr>
+          <tr><td><span class="m post">POST</span></td><td><code>/account/{id}/retiro</code></td><td>Retiro</td><td><code>RETIRAR</code> sobre el alcance de la cuenta</td></tr>
+          <tr><td><span class="m post">POST</span></td><td><code>/account/{id}/transferencia</code></td><td>Transferencia; la cuenta de la ruta es el origen</td><td><code>TRANSFERIR</code> sobre el alcance del origen</td></tr>
+          <tr><td><span class="m get">GET</span></td><td><code>/account/{id}/saldo</code></td><td>Historial de movimientos con el saldo tras cada uno</td><td><code>VER</code> sobre el alcance de la cuenta</td></tr>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section id="empezar">
+    <div class="wrap">
+      <div class="eyebrow">PUESTA EN MARCHA</div>
+      <h2>Cinco pasos para levantarlo</h2>
+      <p class="intro">Se necesita Python, Docker y PostgreSQL 15 o superior; el contenedor del proyecto usa PostgreSQL 17.</p>
+<pre class="card"><span class="c"># 1. Variables de entorno</span>
+cp .env.example .env            <span class="c"># y ajustar los valores</span>
+
+<span class="c"># 2. Dependencias</span>
+python -m venv venv
+venv/bin/pip install -r requirements.txt
+
+<span class="c"># 3. Base de datos</span>
+docker compose up -d
+
+<span class="c"># 4. Esquema, roles, permisos y primer admin</span>
+venv/bin/python create_admin.py
+
+<span class="c"># 5. Servidor de desarrollo en http://localhost:8080</span>
+venv/bin/python app.py</pre>
+      <div class="warn"><b>create_admin.py es destructivo:</b> borra y recrea todas las tablas y la vista <code>historial_cuentas</code>. Hoy es la única forma de crear el esquema, porque todavía no hay migraciones.</div>
+      <div class="chips">
+        <span class="chip">Python</span><span class="chip">Flask 3.1</span><span class="chip">SQLAlchemy 2.1</span><span class="chip">PostgreSQL 17</span>
+        <span class="chip">psycopg 3</span><span class="chip">PyJWT + bcrypt</span><span class="chip">dependency-injector</span><span class="chip">Docker</span>
+      </div>
+    </div>
+  </section>
+
+  <section id="pendientes">
+    <div class="wrap">
+      <div class="eyebrow">PENDIENTES</div>
+      <h2>Lo que todavía no hace</h2>
+      <p class="intro">Siguen abiertos en la especificación y no están implementados.</p>
+      <ul class="card todo">
+        <li>Reversos de transacciones.</li>
+        <li>Idempotencia de operaciones, con una clave por solicitud.</li>
+        <li>Migraciones del esquema.</li>
+        <li>Pruebas automatizadas.</li>
+        <li>Servicios para desactivar usuarios o cambiarles el rol.</li>
+        <li>Paginación del historial de movimientos.</li>
+      </ul>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span><b>Core bancario</b> · partida doble, solo MXN</span>
+    <span>Flask · SQLAlchemy · PostgreSQL</span>
+  </div>
+</footer>
+
+</body>
+</html>
