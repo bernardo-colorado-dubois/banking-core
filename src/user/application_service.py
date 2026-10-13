@@ -157,3 +157,46 @@ class PasswordChanger:
       self.repository.update(user)
     finally:
       self.repository.close()
+
+class UserDeactivator:
+  """Desactivación de usuario (§8.14)."""
+
+  def __init__(self,repository:UserRepository) -> None:
+    self.repository = repository
+
+  def invoque(self,actor:AuthenticatedUser,email:str)->UserProfile:
+    if not actor.tiene_permiso(Accion.GESTIONAR_USUARIOS):
+      raise PermissionDenied('No tiene permiso para gestionar usuarios')
+
+    try:
+      # Los admins activos se bloquean primero: dos desactivaciones simultáneas
+      # se ejecutan una tras otra y la segunda ya ve el resultado de la primera (§7)
+      admins = self.repository.find_active_admins_for_update()
+
+      user = self.repository.find_by_email_for_update(email)
+      if user is None:
+        raise ValueError(f'No existe un usuario con el email {email}')
+
+      if not user.activo:
+        raise ValueError(f'El usuario {email} ya está inactivo')
+
+      # Al menos un admin activo (§7)
+      if user in admins and len(admins) == 1:
+        raise ValueError('No se puede desactivar al único admin activo')
+
+      user.activo = False
+
+      # El DTO se arma antes de cerrar la sesión: el rol se carga de forma diferida
+      perfil = UserProfile(
+        id=user.id,
+        email=user.email,
+        nombre=user.nombre,
+        rol=user.rol.nombre,
+        activo=user.activo,
+        debe_cambiar_password=user.debe_cambiar_password,
+        creado_en=user.creado_en
+      )
+      self.repository.update(user)
+      return perfil
+    finally:
+      self.repository.close()

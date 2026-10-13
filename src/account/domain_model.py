@@ -19,6 +19,7 @@ class TipoTransaccion(Enum):
   FONDEO = "FONDEO"
   RETIRO = "RETIRO"
   TRANSFERENCIA = "TRANSFERENCIA"
+  REVERSO = "REVERSO"
 
 # §4.2 Los dos lados del libro de una cuenta
 class Lado(Enum):
@@ -58,9 +59,18 @@ class Account(Base):
 class Transaction(Base):
 
   __tablename__ = 'transacciones'
+  __table_args__ = (
+    # Solo un reverso referencia a otra transacción (§8.15)
+    CheckConstraint(
+      "(tipo = 'REVERSO') = (transaccion_original_id IS NOT NULL)",
+      name='original_segun_tipo',
+    ),
+  )
 
   id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
   tipo: Mapped[TipoTransaccion] = mapped_column(nullable=False)
+  # Único: una transacción se reversa una sola vez (§8.15)
+  transaccion_original_id: Mapped[UUID | None] = mapped_column(ForeignKey('transacciones.id'), unique=True, nullable=True)
   descripcion: Mapped[str | None] = mapped_column(nullable=True)
   creada_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
   movimientos: Mapped[List["Movement"]] = relationship(back_populates='transaccion')
@@ -80,6 +90,24 @@ class Transaction(Base):
     return cls(
       tipo=TipoTransaccion.TRANSFERENCIA,
       movimientos=salida(origen_id, monto) + entrada(destino_id, monto)
+    )
+
+  # Los mismos movimientos de la original con la naturaleza opuesta (§8.15).
+  # La original no se toca: los movimientos son inmutables (§4.4)
+  @classmethod
+  def reverso(cls,original:"Transaction")->"Transaction":
+    return cls(
+      tipo=TipoTransaccion.REVERSO,
+      transaccion_original_id=original.id,
+      movimientos=[
+        Movement(
+          cuenta_id=movimiento.cuenta_id,
+          lado=movimiento.lado,
+          naturaleza=Naturaleza.DEBITO if movimiento.naturaleza == Naturaleza.CREDITO else Naturaleza.CREDITO,
+          monto=movimiento.monto
+        )
+        for movimiento in original.movimientos
+      ]
     )
 
   def validar(self,saldos:dict[UUID,Decimal])->None:
@@ -235,6 +263,12 @@ class AccountRepository:
         .where(historial_cuentas.c.cuenta_id==id)
         .order_by(historial_cuentas.c.creado_en, historial_cuentas.c.movimiento_id)
     ).all()
+
+  def find_transaction_by_id(self,id:UUID)->Transaction|None:
+    return self.session.query(Transaction).filter(Transaction.id==id).one_or_none()
+
+  def find_reversal_of(self,id:UUID)->Transaction|None:
+    return self.session.query(Transaction).filter(Transaction.transaccion_original_id==id).one_or_none()
 
   def close(self)->None:
     self.session.close()

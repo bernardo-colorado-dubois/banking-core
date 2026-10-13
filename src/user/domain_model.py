@@ -12,6 +12,7 @@ class Accion(Enum):
   RETIRAR = "RETIRAR"
   TRANSFERIR = "TRANSFERIR"
   ABRIR_CUENTA = "ABRIR_CUENTA"
+  REVERSAR = "REVERSAR"
   GESTIONAR_USUARIOS = "GESTIONAR_USUARIOS"
 
 class Alcance(Enum):
@@ -95,6 +96,20 @@ class UserRepository:
 
   def find_by_email(self,email:str)->User|None:
     return self.session.query(User).filter(User.email==email).one_or_none()
+
+  def find_by_email_for_update(self,email:str)->User|None:
+    return self.session.query(User).filter(User.email==email).with_for_update().one_or_none()
+
+  # Bloquea las filas de los admins activos, en orden de id para no cruzar bloqueos (§7)
+  def find_active_admins_for_update(self)->List[User]:
+    return (
+      self.session.query(User)
+      .join(User.rol)
+      .filter(Role.nombre=='ADMIN', User.activo.is_(True))
+      .order_by(User.id)
+      .with_for_update(of=User)
+      .all()
+    )
 
   def close(self)->None:
     self.session.close()

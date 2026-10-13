@@ -33,6 +33,8 @@ roles = {
   'ADMIN': [(accion, alcance) for alcance in (Alcance.VOSTRO, Alcance.NOSTRO) for accion in operaciones] + [
     (Accion.ABRIR_CUENTA, Alcance.VOSTRO),
     (Accion.ABRIR_CUENTA, Alcance.NOSTRO),
+    (Accion.REVERSAR, Alcance.VOSTRO),
+    (Accion.REVERSAR, Alcance.NOSTRO),
     (Accion.GESTIONAR_USUARIOS, None),
   ],
 }

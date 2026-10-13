@@ -1,8 +1,8 @@
 from decimal import Decimal, InvalidOperation
 from uuid import UUID
 
-from src.account.domain_model import Account, AccountRepository, ClaseCuenta, Transaction
-from src.account.dto import AccountDetail, AccountSummary, AccountBalance, AccountMovement, OperationResult
+from src.account.domain_model import Account, AccountRepository, ClaseCuenta, Lado, TipoTransaccion, Transaction
+from src.account.dto import AccountDetail, AccountSummary, AccountBalance, AccountMovement, OperationResult, ReversalResult
 from src.user.domain_model import User, UserRepository, RoleRepository, Accion, Alcance
 from src.user.dto import UserCreate, AuthenticatedUser
 from src.main.errors import PermissionDenied
@@ -290,6 +290,56 @@ class AccountTransfer:
         saldo=saldo - monto,
         creada_en=transaction.creada_en
       )
+    finally:
+      self.repository.close()
+
+class TransactionReverser:
+  """Reverso de un fondeo, un retiro o una transferencia (§8.15)."""
+
+  def __init__(self,repository:AccountRepository) -> None:
+    self.repository = repository
+
+  def invoque(self,actor:AuthenticatedUser,transaccion_id:UUID)->ReversalResult:
+    # Sin ningún permiso de reverso no se revela si la transacción existe
+    if not any(accion == Accion.REVERSAR for accion, _ in actor.permisos):
+      raise PermissionDenied('No tiene permiso para reversar transacciones')
+
+    try:
+      original = self.repository.find_transaction_by_id(transaccion_id)
+      if original is None:
+        raise ValueError('No existe la transacción')
+
+      # Las cuentas de la original se bloquean en orden de id (§10). Dos reversos
+      # simultáneos de la misma transacción se ejecutan uno tras otro
+      cuenta_ids = list({movimiento.cuenta_id for movimiento in original.movimientos})
+      cuentas = self.repository.find_by_ids_for_update(cuenta_ids)
+      for account in cuentas:
+        autorizar(actor, Accion.REVERSAR, account)
+
+      if original.tipo == TipoTransaccion.REVERSO:
+        raise ValueError('Un reverso no se puede reversar')
+
+      # Se consulta con las cuentas ya bloqueadas
+      if self.repository.find_reversal_of(original.id) is not None:
+        raise ValueError('La transacción ya fue reversada')
+
+      saldos = {account.id: self.repository.balance(account.id) for account in cuentas}
+      transaction = Transaction.reverso(original)
+      # §6.3 aplica igual: si el dinero ya no está en la cuenta, el reverso se rechaza
+      transaction.validar(saldos)
+
+      result = dict(
+        transaccion_original_id=original.id,
+        tipo_original=original.tipo,
+        monto=original.movimientos[0].monto,
+        saldos={
+          cuenta_id: saldo + transaction.variacion(cuenta_id, Lado.PRINCIPAL)
+          for cuenta_id, saldo in saldos.items()
+        }
+      )
+      self.repository.save_transaction(transaction)
+
+      return ReversalResult(transaccion_id=transaction.id, creada_en=transaction.creada_en, **result)
     finally:
       self.repository.close()
 

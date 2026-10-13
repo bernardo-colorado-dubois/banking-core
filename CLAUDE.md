@@ -2,7 +2,7 @@
 
 Core bancario mínimo en Flask + SQLAlchemy + PostgreSQL que registra cuentas y movimientos bajo partida doble, solo en MXN. La especificación completa está en `especificacion-core-bancario.md`: define **qué** se construye. Las secciones marcadas como **Pendiente** (§11) no se implementan por suposición.
 
-Estado actual: el módulo `user` (usuarios, RBAC, login con JWT, altas de admin y operador, cambio de contraseña, perfil) está implementado. El módulo `account` tiene las tablas contables (§9), las aperturas de cuenta (§8.3, §8.4, §8.13) y las operaciones: fondeo, retiro, transferencia y consulta de saldo con historial de movimientos (§8.5 a §8.12), con las invariantes de §6 y el bloqueo de filas de §10, además de la lista de cuentas para operador y admin. No hay reversos ni idempotencia (pendientes de §11).
+Estado actual: el módulo `user` (usuarios, RBAC, login con JWT, altas de admin y operador, desactivación, cambio de contraseña, perfil) está implementado. El módulo `account` tiene las tablas contables (§9), las aperturas de cuenta (§8.3, §8.4, §8.13) y las operaciones: fondeo, retiro, transferencia y consulta de saldo con historial de movimientos (§8.5 a §8.12), con las invariantes de §6 y el bloqueo de filas de §10, además de la lista de cuentas para operador y admin y el reverso de transacciones (§8.15). No hay idempotencia (pendiente de §11).
 
 ## Comandos
 
@@ -70,6 +70,7 @@ src/
 | POST | `/user/password` | `PasswordChanger` | `@authenticated(permitir_password_pendiente=True)` |
 | POST | `/user/admin` | `UserSignup` (rol `ADMIN`, §8.1) | `@authenticated()` |
 | POST | `/user/operador` | `UserSignup` (rol `OPERADOR`, §8.2) | `@authenticated()` |
+| POST | `/user/desactivar` | `UserDeactivator` (§8.14) | `@authenticated()` |
 | GET | `/account/` | `AccountLister` | `@authenticated()` |
 | POST | `/account/cliente` | `ClientSignup` (§8.3) | `@authenticated()` |
 | POST | `/account/vostro` | `VostroAccountOpener` (§8.4) | `@authenticated()` |
@@ -78,6 +79,7 @@ src/
 | POST | `/account/<cuenta_id>/retiro` | `AccountWithdrawer` (§8.6, §8.11) | `@authenticated()` |
 | POST | `/account/<cuenta_id>/transferencia` | `AccountTransfer` (§8.7, §8.12) | `@authenticated()` |
 | GET | `/account/<cuenta_id>/saldo` | `AccountBalanceReader` (§8.8, §8.9) | `@authenticated()` |
+| POST | `/account/transaccion/<transaccion_id>/reverso` | `TransactionReverser` (§8.15) | `@authenticated()` |
 
 `GET /` es de prueba y responde `{"mensaje": "Hello, World!"}`.
 
@@ -87,6 +89,7 @@ Cuerpos y respuestas:
 - `POST /user/login`: recibe `email`, `password`. Devuelve `token`, `debe_cambiar_password`.
 - `POST /user/password`: recibe `password_actual`, `password_nueva`. Devuelve `debe_cambiar_password: false`.
 - `POST /user/admin` y `/user/operador`: reciben `email`, `password`. Devuelven 201 con `id`, `email`, `rol`, `activo`, `debe_cambiar_password`.
+- `POST /user/desactivar`: recibe `email` del usuario a desactivar. Devuelve 200 con `id`, `email`, `rol`, `activo` (false), `debe_cambiar_password`.
 - `POST /account/cliente`: recibe `email`, `password`, `nombre`, `alias`. Crea el usuario `CLIENTE` y su primera cuenta VOSTRO.
 - `POST /account/vostro`: recibe `email` del cliente existente y `alias`.
 - `POST /account/nostro`: recibe `alias`.
@@ -96,6 +99,7 @@ Cuerpos y respuestas:
 - `POST /account/<cuenta_id>/transferencia`: la cuenta de la ruta es el origen; recibe `cuenta_destino_id`, `monto`.
 - Las tres operaciones devuelven 201 con `transaccion_id`, `tipo`, `monto`, `cuenta_id`, `cuenta_destino_id` (nulo salvo en transferencias), `saldo` (el de `cuenta_id` después de la operación) y `creada_en`.
 - `GET /account/<cuenta_id>/saldo`: devuelve `cuenta_id`, `clase`, `alias` y `movimientos`, la lista completa del más antiguo al más reciente. Cada movimiento trae `movimiento_id`, `transaccion_id`, `tipo`, `naturaleza`, `monto`, `saldo` (el de la cuenta después de ese movimiento) y `creado_en`. No hay saldo global en la cabecera: el saldo actual es el del último movimiento, y una cuenta sin movimientos devuelve la lista vacía.
+- `POST /account/transaccion/<transaccion_id>/reverso`: sin cuerpo. Devuelve 201 con `transaccion_id` (la del reverso), `tipo` (`REVERSO`), `transaccion_original_id`, `tipo_original`, `monto`, `cuentas` (una entrada `cuenta_id`, `saldo` por cada cuenta de la original, con su saldo después del reverso) y `creada_en`.
 - `monto` se acepta como texto o número JSON, mayor que cero y con máximo 2 decimales. Los montos y saldos se devuelven como texto con 2 decimales (`"100.50"`), nunca como float.
 
 ## Servicios de aplicación
@@ -112,6 +116,7 @@ Módulo `user`:
 | `UserAuthenticator` | Traduce el token a un `AuthenticatedUser`. Consulta al usuario en cada solicitud, así una desactivación o cambio de rol surte efecto de inmediato. Lo usa `@authenticated`. |
 | `UserProfileReader` | Devuelve el `UserProfile` del usuario autenticado, armado antes de cerrar la sesión. |
 | `PasswordChanger` | Cambia la contraseña y apaga `debe_cambiar_password`. |
+| `UserDeactivator` | Exige `GESTIONAR_USUARIOS`. Bloquea a los admins activos (`find_active_admins_for_update`) y luego al usuario, y pone `activo` en false. Rechaza email inexistente, usuario ya inactivo y al único admin activo (§7). |
 
 Módulo `account`:
 
@@ -123,6 +128,7 @@ Módulo `account`:
 | `AccountLister` | Exige `VER` sobre `VOSTRO` y sobre `NOSTRO` a la vez, porque la lista trae ambas clases; por la semilla solo lo cumplen operador y admin. Devuelve todas las cuentas con su titular y su saldo actual; los saldos salen de una sola consulta agrupada (`balances`), no de una por cuenta. No bloquea ni modifica nada. |
 | `AccountFunder`, `AccountWithdrawer` | Bloquean la cuenta, exigen `FONDEAR` o `RETIRAR` sobre su alcance, arman la transacción, validan §6 y la guardan. |
 | `AccountTransfer` | Bloquea ambas cuentas en orden de id. Exige `TRANSFERIR` solo sobre el origen; el destino solo debe existir. |
+| `TransactionReverser` | Bloquea las cuentas de la transacción original y exige `REVERSAR` sobre el alcance de cada una; por la semilla solo lo cumple el admin. Arma `Transaction.reverso(original)`, valida §6 y la guarda. Rechaza transacción inexistente, reverso de un reverso, transacción ya reversada y fondos insuficientes. |
 | `AccountBalanceReader` | Exige `VER` sobre el alcance de la cuenta. Devuelve el historial de la vista `historial_cuentas`, con el saldo en cada movimiento. No bloquea ni modifica nada. |
 
 Cómo se arma una operación:
@@ -130,6 +136,7 @@ Cómo se arma una operación:
 - Hay **un servicio por operación**, no uno por rol. `autorizar(actor, accion, account)` calcula el alcance con `account.alcance_para(actor.id)` (`PROPIAS`, `VOSTRO` o `NOSTRO`) y exige el permiso `(accion, alcance)`. Por eso el admin, que tiene los permisos sobre `VOSTRO`, también opera cuentas de clientes.
 - `parse_monto` valida el monto antes de abrir la transacción de BD.
 - `Transaction.fondeo`, `.retiro` y `.transferencia` arman los movimientos de §5. `transaction.validar(saldos)` aplica las invariantes de §6 y se llama siempre antes de `save_transaction`.
+- `Transaction.reverso(original)` repite los movimientos de la original con la naturaleza opuesta y la referencia en `transaccion_original_id`, que es `UNIQUE`: una transacción se reversa una sola vez. La consulta `find_reversal_of` se hace con las cuentas ya bloqueadas.
 - `find_by_ids_for_update` bloquea las cuentas (`SELECT ... FOR UPDATE`, ordenado por id) y `balance` se calcula después, en la misma sesión. El bloqueo se libera con el commit de `save_transaction` o con `close`.
 - Cuenta inexistente, monto inválido y fondos insuficientes son `ValueError` (400); la falta de permiso es `PermissionDenied` (403).
 
@@ -147,7 +154,7 @@ Semilla fija de roles (`create_admin.py`, §9):
 |---|---|
 | `CLIENTE` | VER, FONDEAR, RETIRAR, TRANSFERIR sobre `PROPIAS` |
 | `OPERADOR` | VER, FONDEAR, RETIRAR, TRANSFERIR, ABRIR_CUENTA sobre `NOSTRO`; VER y ABRIR_CUENTA sobre `VOSTRO` |
-| `ADMIN` | VER, FONDEAR, RETIRAR, TRANSFERIR, ABRIR_CUENTA sobre `VOSTRO` y `NOSTRO`; `GESTIONAR_USUARIOS` |
+| `ADMIN` | VER, FONDEAR, RETIRAR, TRANSFERIR, ABRIR_CUENTA, REVERSAR sobre `VOSTRO` y `NOSTRO`; `GESTIONAR_USUARIOS` |
 
 Tablas: `usuarios`, `roles`, `permisos`, `rol_permisos`, `cuentas`, `transacciones`, `movimientos`. Las claves primarias son UUID.
 
@@ -158,6 +165,8 @@ Decisiones que cierran pendientes de §11:
 - Toda cuenta lleva un `alias` obligatorio, NOSTRO y VOSTRO. Es único por titular (`UNIQUE NULLS NOT DISTINCT (titular_id, alias)`), así que también es único entre las NOSTRO.
 - `usuarios.nombre` es el dato del cliente que se pide en el alta (§8.3). Es nulo en admins y operadores.
 - El admin sí opera cuentas VOSTRO, por los permisos de la semilla; no hay un servicio aparte para eso.
+- Solo se desactivan usuarios (§8.14): no hay reactivación ni cambio de rol, esos casos de uso no aplican. Un admin puede desactivarse a sí mismo si queda otro activo, y las cuentas de un cliente desactivado se conservan.
+- Un reverso es una transacción de tipo `REVERSO` que referencia a la original (§8.15). Es total, único por transacción y no se puede reversar; si deja una cuenta en negativo se rechaza (§6). En el historial aparece como un movimiento más, con tipo `REVERSO`.
 - La consulta de saldo devuelve el historial de movimientos con el saldo tras cada uno, sin saldo global; no hay un servicio aparte ni paginación.
 
 ## Convenciones

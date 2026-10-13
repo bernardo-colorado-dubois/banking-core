@@ -8,8 +8,9 @@ from src.user.domain_model import UserRepository, RoleRepository
 from src.account.domain_model import AccountRepository
 from src.account.application_service import ClientSignup, VostroAccountOpener, NostroAccountOpener
 from src.account.application_service import AccountFunder, AccountWithdrawer, AccountTransfer, AccountBalanceReader
-from src.account.application_service import AccountLister
+from src.account.application_service import AccountLister, TransactionReverser
 from src.user.application_service import UserCreator, UserSignup, UserLogin, UserAuthenticator, UserProfileReader, PasswordChanger
+from src.user.application_service import UserDeactivator
 
 class DIContainer(DeclarativeContainer):
 
@@ -40,6 +41,7 @@ class DIContainer(DeclarativeContainer):
   )
   user_profile_reader = Factory(UserProfileReader, repository=user_repository)
   password_changer = Factory(PasswordChanger, repository=user_repository)
+  user_deactivator = Factory(UserDeactivator, repository=user_repository)
 
   account_repository = Factory(AccountRepository, session=session)
 
@@ -68,3 +70,4 @@ class DIContainer(DeclarativeContainer):
   account_withdrawer = Factory(AccountWithdrawer, repository=account_repository)
   account_transfer = Factory(AccountTransfer, repository=account_repository)
   account_balance_reader = Factory(AccountBalanceReader, repository=account_repository)
+  transaction_reverser = Factory(TransactionReverser, repository=account_repository)

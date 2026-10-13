@@ -8,7 +8,7 @@ from src.main.middleware import authenticated
 from src.main.utils import json_body
 from src.account.application_service import ClientSignup, VostroAccountOpener, NostroAccountOpener
 from src.account.application_service import AccountFunder, AccountWithdrawer, AccountTransfer, AccountBalanceReader
-from src.account.application_service import AccountLister
+from src.account.application_service import AccountLister, TransactionReverser
 from src.account.dto import AccountDetail, OperationResult
 from src.user.dto import UserCreate, AuthenticatedUser
 
@@ -218,3 +218,27 @@ def balance(
       for movimiento in saldo.movimientos
     ]
   )
+
+# §8.15 Reverso. No lleva cuerpo: la transacción de la ruta se reversa completa
+@blueprint.route("/transaccion/<uuid:transaccion_id>/reverso", methods=["POST"])
+@authenticated()
+@inject
+def reverse(
+  transaccion_id: UUID,
+  actor: AuthenticatedUser,
+  transaction_reverser: TransactionReverser = Provide[DIContainer.transaction_reverser]
+):
+  try:
+    result = transaction_reverser.invoque(actor, transaccion_id)
+  except ValueError as error:
+    return jsonify(error=str(error)), 400
+
+  return jsonify(
+    transaccion_id=str(result.transaccion_id),
+    tipo='REVERSO',
+    transaccion_original_id=str(result.transaccion_original_id),
+    tipo_original=result.tipo_original.value,
+    monto=str(result.monto),
+    cuentas=[dict(cuenta_id=str(cuenta_id), saldo=str(saldo)) for cuenta_id, saldo in result.saldos.items()],
+    creada_en=result.creada_en.isoformat()
+  ), 201

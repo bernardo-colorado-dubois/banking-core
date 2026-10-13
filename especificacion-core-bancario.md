@@ -132,7 +132,10 @@ class TipoTransaccion(Enum):
     FONDEO = "FONDEO"
     RETIRO = "RETIRO"
     TRANSFERENCIA = "TRANSFERENCIA"
+    REVERSO = "REVERSO"
 ```
+
+Un **reverso** (§8.15) deshace una transacción anterior con una transacción nueva de tipo `REVERSO`, que repite sus movimientos con la naturaleza opuesta. La original no se edita ni se borra (§4.4).
 
 ## 6. Invariantes
 
@@ -168,6 +171,7 @@ class Accion(Enum):
     RETIRAR = "RETIRAR"
     TRANSFERIR = "TRANSFERIR"
     ABRIR_CUENTA = "ABRIR_CUENTA"
+    REVERSAR = "REVERSAR"
     GESTIONAR_USUARIOS = "GESTIONAR_USUARIOS"
 
 class Alcance(Enum):
@@ -186,6 +190,7 @@ Asignación de permisos:
 | `VER`, `FONDEAR`, `RETIRAR`, `TRANSFERIR` sobre `NOSTRO` | | ✓ | ✓ |
 | `ABRIR_CUENTA:NOSTRO` | | ✓ | ✓ |
 | `ABRIR_CUENTA:VOSTRO` | | ✓ | ✓ |
+| `REVERSAR` sobre `VOSTRO` y `NOSTRO` | | | ✓ |
 | `GESTIONAR_USUARIOS` | | | ✓ |
 
 Evaluación:
@@ -196,6 +201,7 @@ Evaluación:
    - NOSTRO → `NOSTRO`.
 2. Un servicio de autorización del dominio verifica si el rol del usuario incluye el permiso `(acción, alcance)`. Si no, la operación se rechaza antes de tocar el libro.
 3. En una transferencia, el permiso se evalúa sobre la cuenta **origen**. La cuenta destino solo debe existir.
+4. En un reverso, el permiso `REVERSAR` se evalúa sobre **todas** las cuentas de la transacción original.
 
 Reglas generales:
 
@@ -220,7 +226,7 @@ Reglas generales:
 ### Al menos un admin
 
 - El sistema siempre debe tener **al menos un admin activo**.
-- Se rechaza cualquier operación que deje cero admins activos: desactivar al último admin o cambiarle el rol.
+- Se rechaza cualquier operación que deje cero admins activos: hoy, desactivar al último admin (§8.14). El rol de un usuario no se cambia después del alta.
 - La validación se hace en el caso de uso, dentro de la transacción de BD, bloqueando las filas de los admins activos (`SELECT ... FOR UPDATE`). Así, dos admins no pueden desactivarse mutuamente al mismo tiempo y dejar el sistema sin administrador.
 
 ### Primer admin
@@ -405,6 +411,33 @@ El destino puede ser cualquier cuenta del banco, NOSTRO o VOSTRO. Como el permis
 | **Efecto** | Crea una cuenta NOSTRO, con `titular_id` nulo y saldo cero. Su titular es el nombre del banco |
 | **Rechazos** | Sin permiso |
 
+### 8.14 Desactivación de usuario
+
+| | |
+|---|---|
+| **Quién lo ejecuta** | Admin |
+| **Permiso requerido** | `GESTIONAR_USUARIOS` |
+| **Entrada** | `email` del usuario |
+| **Efecto** | Pone `activo = false` en el usuario, sea admin, operador o cliente. Deja de poder autenticarse y sus tokens vigentes dejan de servir (§7) |
+| **Rechazos** | Sin permiso; email inexistente; el usuario ya está inactivo; es el único admin activo (§7) |
+
+Un admin puede desactivarse a sí mismo si queda otro admin activo. Las cuentas de un cliente desactivado se conservan con su saldo y siguen recibiendo transferencias. No hay reactivación ni cambio de rol: esos casos de uso no aplican.
+
+### 8.15 Reverso
+
+| | |
+|---|---|
+| **Quién lo ejecuta** | Admin |
+| **Permiso requerido** | `REVERSAR` sobre el alcance de cada cuenta de la transacción original |
+| **Entrada** | `transaccion_id` de la transacción a reversar |
+| **Efecto** | Transacción `REVERSO` que referencia a la original (`transaccion_original_id`) y repite sus movimientos con la naturaleza opuesta: 2 si era fondeo o retiro, 4 si era transferencia |
+| **Rechazos** | Sin permiso; transacción inexistente; la transacción es un reverso; ya fue reversada; fondos insuficientes |
+
+- El reverso es siempre por el monto completo; no hay reversos parciales.
+- Una transacción se reversa una sola vez, y un reverso no se puede reversar.
+- Las invariantes de §6 aplican igual. Si reversar dejaría una cuenta con saldo negativo (el dinero de un fondeo o de una transferencia recibida ya salió de la cuenta), el reverso se rechaza.
+- Se bloquean las cuentas de la transacción original, igual que en §10.
+
 ## 9. Persistencia (propuesta)
 
 > Propuesta inicial; revisar antes de implementar.
@@ -435,7 +468,7 @@ El RBAC es una **semilla fija**:
 | Columna | Tipo | Notas |
 |---|---|---|
 | `id` | UUID | PK |
-| `accion` | enum `VER` / `FONDEAR` / `RETIRAR` / `TRANSFERIR` / `ABRIR_CUENTA` / `GESTIONAR_USUARIOS` | |
+| `accion` | enum `VER` / `FONDEAR` / `RETIRAR` / `TRANSFERIR` / `ABRIR_CUENTA` / `REVERSAR` / `GESTIONAR_USUARIOS` | |
 | `alcance` | enum `PROPIAS` / `VOSTRO` / `NOSTRO` | nulo solo para `GESTIONAR_USUARIOS` |
 
 Restricciones:
@@ -488,7 +521,7 @@ Una migración inicial carga los roles y permisos:
 |---|---|
 | `CLIENTE` | `VER:PROPIAS`, `FONDEAR:PROPIAS`, `RETIRAR:PROPIAS`, `TRANSFERIR:PROPIAS` |
 | `OPERADOR` | `VER:NOSTRO`, `FONDEAR:NOSTRO`, `RETIRAR:NOSTRO`, `TRANSFERIR:NOSTRO`, `ABRIR_CUENTA:NOSTRO`, `VER:VOSTRO`, `ABRIR_CUENTA:VOSTRO` |
-| `ADMIN` | `VER`, `FONDEAR`, `RETIRAR`, `TRANSFERIR` sobre `VOSTRO` y `NOSTRO`; `ABRIR_CUENTA:VOSTRO`, `ABRIR_CUENTA:NOSTRO`; `GESTIONAR_USUARIOS` |
+| `ADMIN` | `VER`, `FONDEAR`, `RETIRAR`, `TRANSFERIR`, `REVERSAR` sobre `VOSTRO` y `NOSTRO`; `ABRIR_CUENTA:VOSTRO`, `ABRIR_CUENTA:NOSTRO`; `GESTIONAR_USUARIOS` |
 
 El admin no necesita los permisos `PROPIAS`: no es titular de cuentas, y `VOSTRO` ya cubre cualquier cuenta de cliente.
 
@@ -499,7 +532,8 @@ El admin no necesita los permisos `PROPIAS`: no es titular de cuentas, y `VOSTRO
 | Columna | Tipo | Notas |
 |---|---|---|
 | `id` | UUID | PK |
-| `tipo` | enum `FONDEO` / `RETIRO` / `TRANSFERENCIA` | |
+| `tipo` | enum `FONDEO` / `RETIRO` / `TRANSFERENCIA` / `REVERSO` | |
+| `transaccion_original_id` | UUID | FK → `transacciones`, único. Obligatorio si es `REVERSO`, nulo en los demás tipos |
 | `descripcion` | texto | opcional |
 | `creada_en` | timestamptz | |
 
@@ -530,10 +564,10 @@ Como el saldo se calcula a partir de movimientos, dos operaciones simultáneas s
 - [x] Servicios: el admin tiene permisos para operar cuentas VOSTRO, pero no hay un servicio para eso. ¿Se agrega, o el admin no opera cuentas de clientes en la práctica?
 - [x] Servicios: ¿la consulta de saldo incluye la lista de movimientos, o la consulta de movimientos es un servicio aparte?
 - [x] Servicios: faltan inicio de sesión y cambio de contraseña (necesario por `debe_cambiar_password`). ¿Se agregan?
-- [ ] Servicios: ¿hay servicios para desactivar usuarios o cambiarles el rol?
+- [x] Servicios: ¿hay servicios para desactivar usuarios o cambiarles el rol?
 - [x] Endpoints de la API (rutas, payloads, respuestas, códigos de error).
 - [x] Apertura de cuentas: datos requeridos del titular.
-- [ ] Reversos: si se implementan como transacción de tipo propio que referencia a la original.
+- [x] Reversos: si se implementan como transacción de tipo propio que referencia a la original.
 - [ ] Idempotencia de operaciones (por ejemplo, una clave de idempotencia por solicitud).
 - [ ] Migraciones (Alembic u otra herramienta).
 - [ ] Estrategia de pruebas.

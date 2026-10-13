@@ -22,10 +22,11 @@ La especificación completa está en [`especificacion-core-bancario.md`](especif
 
 ## Funcionalidades
 
-- **Usuarios y acceso:** login con JWT, cambio de contraseña obligatorio en el primer ingreso, perfil del usuario autenticado y alta de administradores y operadores.
+- **Usuarios y acceso:** login con JWT, cambio de contraseña obligatorio en el primer ingreso, perfil del usuario autenticado, alta de administradores y operadores, y desactivación de usuarios.
 - **Control de acceso por permisos (RBAC):** tres roles fijos (`CLIENTE`, `OPERADOR`, `ADMIN`), cada uno con permisos de la forma *(acción, alcance)*.
 - **Apertura de cuentas:** alta de cliente con su primera cuenta, cuentas adicionales para un cliente existente y cuentas propias del banco.
 - **Operaciones:** fondeo, retiro y transferencia entre cuentas del mismo banco, cada una como una transacción atómica de partida doble.
+- **Reversos:** un admin deshace un fondeo, un retiro o una transferencia con una transacción nueva que referencia a la original.
 - **Consulta de saldo e historial:** lista de movimientos de una cuenta con el saldo que dejó cada uno, calculado en SQL por una vista.
 - **Invariantes contables:** validadas en el dominio antes de persistir cualquier transacción.
 - **Concurrencia segura:** bloqueo de filas para que dos operaciones simultáneas no gasten el mismo saldo.
@@ -263,6 +264,8 @@ Cada operación es una transacción atómica: se registran todos sus movimientos
 
 Un retiro y una transferencia saliente dejan movimientos idénticos en el libro de la cuenta; los distingue el `tipo` de la transacción (`FONDEO`, `RETIRO`, `TRANSFERENCIA`).
 
+Un reverso deshace una transacción con otra de tipo `REVERSO`, que repite sus movimientos con la naturaleza opuesta y referencia a la original. La original no se toca.
+
 Los movimientos son **inmutables**: nunca se editan ni se borran. Su monto siempre es positivo; la dirección la da la naturaleza (`DEBITO` o `CREDITO`).
 
 ### Invariantes
@@ -294,7 +297,7 @@ Se manejan con `Decimal` en el código y `NUMERIC(18,2)` en la base, nunca con `
 
 La autorización se hace **por permisos, nunca por rol**. Un permiso es el par *(acción, alcance)*:
 
-| Acciones | `VER`, `FONDEAR`, `RETIRAR`, `TRANSFERIR`, `ABRIR_CUENTA`, `GESTIONAR_USUARIOS` |
+| Acciones | `VER`, `FONDEAR`, `RETIRAR`, `TRANSFERIR`, `ABRIR_CUENTA`, `REVERSAR`, `GESTIONAR_USUARIOS` |
 |---|---|
 | **Alcances** | `PROPIAS` (cuentas del usuario autenticado), `VOSTRO` (cualquier cuenta de cliente), `NOSTRO` (cuentas del banco) |
 
@@ -320,6 +323,7 @@ Los roles y sus permisos son una semilla fija que crea `create_admin.py`:
 | `ABRIR_CUENTA` sobre `VOSTRO` | | ✓ | ✓ |
 | `VER`, `FONDEAR`, `RETIRAR`, `TRANSFERIR` sobre `NOSTRO` | | ✓ | ✓ |
 | `ABRIR_CUENTA` sobre `NOSTRO` | | ✓ | ✓ |
+| `REVERSAR` sobre `VOSTRO` y `NOSTRO` | | | ✓ |
 | `GESTIONAR_USUARIOS` | | | ✓ |
 
 En una transferencia el permiso se evalúa solo sobre la cuenta **origen**; el destino solo debe existir. Por eso el operador puede acreditar una cuenta de cliente transfiriendo desde una NOSTRO, aunque no pueda fondearla ni retirar de ella.
@@ -337,6 +341,7 @@ Todas las rutas reciben y devuelven JSON. Salvo las marcadas, requieren `Authori
 | POST | `/user/password` | Cambia la contraseña | Cualquier usuario¹ |
 | POST | `/user/admin` | Alta de administrador (§8.1) | `GESTIONAR_USUARIOS` |
 | POST | `/user/operador` | Alta de operador (§8.2) | `GESTIONAR_USUARIOS` |
+| POST | `/user/desactivar` | Desactiva a un usuario (§8.14) | `GESTIONAR_USUARIOS` |
 
 ¹ Disponibles aunque el usuario tenga pendiente el cambio de contraseña.
 
@@ -346,6 +351,7 @@ Todas las rutas reciben y devuelven JSON. Salvo las marcadas, requieren `Authori
 | `GET /user/` | — | 200: `id`, `email`, `nombre`, `rol`, `activo`, `debe_cambiar_password`, `creado_en` |
 | `POST /user/password` | `password_actual`, `password_nueva` | 200: `debe_cambiar_password: false` |
 | `POST /user/admin`, `/user/operador` | `email`, `password` | 201: `id`, `email`, `rol`, `activo`, `debe_cambiar_password` |
+| `POST /user/desactivar` | `email` | 200: `id`, `email`, `rol`, `activo: false`, `debe_cambiar_password` |
 
 ### Cuentas
 
@@ -359,6 +365,7 @@ Todas las rutas reciben y devuelven JSON. Salvo las marcadas, requieren `Authori
 | POST | `/account/<cuenta_id>/retiro` | Retiro (§8.6, §8.11) | `RETIRAR` sobre el alcance de la cuenta |
 | POST | `/account/<cuenta_id>/transferencia` | Transferencia; la cuenta de la ruta es el origen (§8.7, §8.12) | `TRANSFERIR` sobre el alcance del origen |
 | GET | `/account/<cuenta_id>/saldo` | Historial de movimientos con saldo (§8.8, §8.9) | `VER` sobre el alcance de la cuenta |
+| POST | `/account/transaccion/<transaccion_id>/reverso` | Reverso de una transacción (§8.15) | `REVERSAR` sobre el alcance de cada cuenta de la transacción |
 
 | Ruta | Cuerpo |
 |---|---|
@@ -367,6 +374,7 @@ Todas las rutas reciben y devuelven JSON. Salvo las marcadas, requieren `Authori
 | `POST /account/nostro` | `alias` |
 | `POST /account/<cuenta_id>/fondeo`, `/retiro` | `monto` |
 | `POST /account/<cuenta_id>/transferencia` | `cuenta_destino_id`, `monto` |
+| `POST /account/transaccion/<transaccion_id>/reverso` | — |
 
 **Aperturas** — responden 201:
 
@@ -398,6 +406,25 @@ En una cuenta NOSTRO, `titular` es el nombre del banco y `titular_id` es nulo.
 ```
 
 `saldo` es el de `cuenta_id` después de la operación. `cuenta_destino_id` es nulo salvo en transferencias.
+
+**Reverso** — responde 201:
+
+```json
+{
+  "transaccion_id": "c51f…",
+  "tipo": "REVERSO",
+  "transaccion_original_id": "0115…",
+  "tipo_original": "TRANSFERENCIA",
+  "monto": "100.00",
+  "cuentas": [
+    { "cuenta_id": "5f0c…", "saldo": "749.50" },
+    { "cuenta_id": "76a4…", "saldo": "0.00" }
+  ],
+  "creada_en": "2026-10-10T12:50:02.118204-06:00"
+}
+```
+
+`cuentas` trae cada cuenta de la transacción original con su saldo después del reverso: una en fondeos y retiros, dos en transferencias. Responde 400 si la transacción no existe, ya fue reversada, es un reverso o si reversarla dejaría una cuenta con saldo negativo.
 
 **Saldo e historial** — responde 200:
 
@@ -449,6 +476,7 @@ Cada servicio es una clase con un único método `invoque(...)`, registrada como
 | `UserAuthenticator` | Traduce el token a un `AuthenticatedUser` con su id, rol y permisos. Lo usa `@authenticated`. |
 | `UserProfileReader` | Devuelve el perfil del usuario autenticado, sin el hash de la contraseña. |
 | `PasswordChanger` | Cambia la contraseña y apaga `debe_cambiar_password`. |
+| `UserDeactivator` | Exige `GESTIONAR_USUARIOS` y pone `activo` en false. Bloquea a los admins activos y rechaza desactivar al único que queda. |
 
 ### Módulo `account`
 
@@ -461,6 +489,7 @@ Cada servicio es una clase con un único método `invoque(...)`, registrada como
 | `AccountFunder` | Fondeo: bloquea la cuenta, exige `FONDEAR`, arma la transacción, la valida y la guarda. |
 | `AccountWithdrawer` | Retiro: igual que el fondeo, con `RETIRAR`. Sin fondos suficientes, la validación lo rechaza. |
 | `AccountTransfer` | Transferencia: bloquea ambas cuentas en orden de id y exige `TRANSFERIR` solo sobre el origen. |
+| `TransactionReverser` | Reverso: bloquea las cuentas de la transacción original, exige `REVERSAR` sobre cada una y guarda una transacción `REVERSO` con los movimientos opuestos. Rechaza un segundo reverso, el reverso de un reverso y el que dejaría una cuenta en negativo. |
 | `AccountBalanceReader` | Exige `VER` y devuelve el historial de la vista `historial_cuentas`. No bloquea ni modifica nada. |
 
 Hay **un servicio por operación**, no uno por rol: el mismo `AccountFunder` atiende al cliente que fondea su cuenta y al admin que fondea la de un cliente o una del banco. La diferencia la resuelve `autorizar(actor, accion, account)` con el alcance de la cuenta.
@@ -501,7 +530,7 @@ roles ──< rol_permisos >── permisos
 | Tabla | Columnas | Restricciones |
 |---|---|---|
 | `cuentas` | `id`, `clase`, `alias`, `titular_id`, `creada_en` | VOSTRO exige titular y NOSTRO lo prohíbe. `UNIQUE NULLS NOT DISTINCT (titular_id, alias)` |
-| `transacciones` | `id`, `tipo`, `descripcion`, `creada_en` | |
+| `transacciones` | `id`, `tipo`, `transaccion_original_id`, `descripcion`, `creada_en` | `transaccion_original_id` es único y solo lo llevan los reversos |
 | `movimientos` | `id`, `transaccion_id`, `cuenta_id`, `lado`, `naturaleza`, `monto`, `creado_en` | `monto > 0`. `creado_en` toma `clock_timestamp()` |
 
 No existe una columna de saldo en ninguna tabla.
@@ -589,11 +618,9 @@ curl -s $BASE/account/$B/saldo -H "Authorization: Bearer $TOKEN"
 
 Siguen abiertos en §11 de la especificación y no están implementados:
 
-- Reversos de transacciones.
 - Idempotencia de operaciones (clave de idempotencia por solicitud).
 - Migraciones: `migrations/` está vacío y el esquema se crea con `create_admin.py`.
 - Pruebas automatizadas: `tests/` está vacío. Para verificar una ruta se usa `app.test_client()`.
-- Servicios para desactivar usuarios o cambiarles el rol.
 - Paginación del historial de movimientos.
 
 ## Licencia

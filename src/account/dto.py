@@ -50,3 +50,13 @@ class OperationResult:
   # Saldo del principal de `cuenta_id` después de la operación
   saldo: Decimal
   creada_en: datetime
+
+@dataclass(frozen=True)
+class ReversalResult:
+  transaccion_id: UUID
+  transaccion_original_id: UUID
+  tipo_original: TipoTransaccion
+  monto: Decimal
+  # Saldo del principal de cada cuenta de la transacción original después del reverso
+  saldos: dict[UUID, Decimal]
+  creada_en: datetime

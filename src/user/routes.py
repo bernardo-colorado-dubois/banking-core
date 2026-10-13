@@ -5,6 +5,7 @@ from src.main.container import DIContainer
 from src.main.middleware import authenticated
 from src.main.utils import json_body
 from src.user.application_service import UserSignup, UserLogin, UserProfileReader, PasswordChanger
+from src.user.application_service import UserDeactivator
 from src.user.dto import UserCreate, AuthenticatedUser
 
 blueprint = Blueprint("user", __name__)
@@ -108,3 +109,29 @@ def signup_operador(
   password = data.get('password')
 
   return signup('OPERADOR', email, password, actor, user_signup)
+
+# §8.14 Desactivación de usuario
+@blueprint.route("/desactivar", methods=["POST"])
+@authenticated()
+@inject
+def deactivate(
+  actor: AuthenticatedUser,
+  user_deactivator: UserDeactivator = Provide[DIContainer.user_deactivator]
+):
+  data = json_body()
+  email = data.get('email')
+  if not isinstance(email, str) or not email.strip():
+    return jsonify(error='email es obligatorio'), 400
+
+  try:
+    perfil = user_deactivator.invoque(actor, email.strip())
+  except ValueError as error:
+    return jsonify(error=str(error)), 400
+
+  return jsonify(
+    id=str(perfil.id),
+    email=perfil.email,
+    rol=perfil.rol,
+    activo=perfil.activo,
+    debe_cambiar_password=perfil.debe_cambiar_password
+  )
