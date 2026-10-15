@@ -90,7 +90,6 @@
     h2 { font-size: clamp(28px, 3.6vw, 40px); line-height: 1.1; font-weight: 800; letter-spacing: -.03em; margin-top: 10px; }
     .intro { font-size: 17.5px; color: var(--muted); margin-top: 14px; max-width: 44em; }
     .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 36px; }
-    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 36px; }
     .feat { padding: 22px; }
     .feat h3 { font-size: 17.5px; font-weight: 700; letter-spacing: -.01em; }
     .feat p { font-size: 15px; color: var(--muted); margin-top: 8px; }
@@ -147,10 +146,6 @@
     .warn b { color: var(--amber); }
     .chips { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 24px; }
     .chip { font-size: 14.5px; font-weight: 600; padding: 7px 14px; border-radius: 999px; border: 1px solid var(--line); background: var(--card); }
-    .todo { margin-top: 36px; padding: 6px 22px; }
-    .todo li { list-style: none; padding: 12px 0 12px 26px; position: relative; font-size: 15.5px; color: var(--muted); }
-    .todo li + li { border-top: 1px solid rgba(255, 255, 255, .06); }
-    .todo li::before { content: ""; position: absolute; left: 2px; top: 18px; width: 12px; height: 12px; border-radius: 4px; border: 2px solid var(--muted); }
 
     footer { border-top: 1px solid var(--line); padding: 32px 0 48px; font-size: 14.5px; color: var(--muted); }
     footer .wrap { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 24px; }
@@ -161,7 +156,7 @@
       .hero { padding: 56px 0 48px; }
       .hero .wrap { grid-template-columns: 1fr; gap: 40px; }
       .stats { grid-template-columns: 1fr 1fr; }
-      .grid3, .grid2 { grid-template-columns: 1fr; }
+      .grid3 { grid-template-columns: 1fr; }
       .pair { grid-template-columns: 1fr; gap: 6px; }
       .arrow { transform: rotate(90deg); }
       section { padding: 56px 0; }
