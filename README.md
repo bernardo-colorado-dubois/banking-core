@@ -2,7 +2,7 @@
 
 Core bancario mínimo que registra cuentas y movimientos de dinero bajo la **ley de partida doble**, solo en pesos mexicanos (MXN). Ningún saldo se guarda ni se modifica directamente: todo cambio ocurre mediante movimientos balanceados, y el saldo de una cuenta se calcula a partir de ellos.
 
-La especificación completa está en [`especificacion-core-bancario.md`](especificacion-core-bancario.md). Las referencias `§N` de este documento apuntan a sus secciones.
+La especificación completa, en inglés, está en [`banking-core-specification.md`](banking-core-specification.md). Las referencias `§N` de este documento apuntan a sus secciones.
 
 ## Contenido
 

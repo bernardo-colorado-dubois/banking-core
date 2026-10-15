@@ -1,25 +1,10 @@
 # Core bancario
 
-Core bancario mínimo en Flask + SQLAlchemy + PostgreSQL que registra cuentas y movimientos bajo partida doble, solo en MXN. La especificación completa está en `especificacion-core-bancario.md`: define **qué** se construye. Las secciones marcadas como **Pendiente** (§11) no se implementan por suposición.
+Core bancario mínimo en Flask + SQLAlchemy + PostgreSQL que registra cuentas y movimientos bajo partida doble, solo en MXN. La especificación completa está en `banking-core-specification.md`: define **qué** se construye. Las secciones marcadas como **Pendiente** (§11) no se implementan por suposición.
 
-La especificación está en español, pero el código no: rutas, claves JSON, modelo, esquema de BD, valores de los enums, servicios, comentarios y mensajes de error van en inglés. El glosario de abajo traduce los términos de la especificación.
+La especificación y el código están en inglés y usan los mismos nombres: rutas, claves JSON, modelo, esquema de BD, valores de los enums, servicios, comentarios y mensajes de error.
 
 Estado actual: el módulo `user` (usuarios, RBAC, login con JWT, altas de admin y operador, desactivación, cambio de contraseña, perfil) está implementado. El módulo `account` tiene las tablas contables (§9), las aperturas de cuenta (§8.3, §8.4, §8.13) y las operaciones: depósito (fondeo), retiro, transferencia y consulta de saldo con historial de movimientos (§8.5 a §8.12), con las invariantes de §6 y el bloqueo de filas de §10, además de la lista de cuentas para operador y admin y el reverso de transacciones (§8.15). No hay idempotencia (pendiente de §11).
-
-## Glosario especificación → código
-
-| Especificación | Código |
-|---|---|
-| Acción: VER, FONDEAR, RETIRAR, TRANSFERIR, ABRIR_CUENTA, REVERSAR, GESTIONAR_USUARIOS | `Action`: `VIEW`, `DEPOSIT`, `WITHDRAW`, `TRANSFER`, `OPEN_ACCOUNT`, `REVERSE`, `MANAGE_USERS` |
-| Alcance: PROPIAS, VOSTRO, NOSTRO | `Scope`: `OWN`, `VOSTRO`, `NOSTRO` |
-| Roles: CLIENTE, OPERADOR, ADMIN | `CLIENT`, `OPERATOR`, `ADMIN` |
-| Clase de cuenta | `AccountClass` (`account_class`) |
-| Tipo de transacción: FONDEO, RETIRO, TRANSFERENCIA, REVERSO | `TransactionType`: `DEPOSIT`, `WITHDRAWAL`, `TRANSFER`, `REVERSAL` |
-| Lado: PRINCIPAL, CONTRAPARTIDA | `Side`: `MAIN`, `CONTRA` |
-| Naturaleza: DEBITO, CREDITO | `EntryType` (`entry_type`): `DEBIT`, `CREDIT` |
-| Titular | `holder`, `holder_id` |
-| Monto, saldo | `amount`, `balance` |
-| Cuenta origen / destino | `source` / `destination` (`destination_account_id`) |
 
 ## Comandos
 
@@ -189,7 +174,7 @@ Decisiones que cierran pendientes de §11:
 ## Convenciones
 
 - Indentación de 2 espacios.
-- Idioma: identificadores, rutas, claves JSON, esquema de BD, valores de enums, comentarios y mensajes de error en **inglés**. Los comentarios citan la sección de la especificación (`§7`, `§8.1`). La documentación (`README.md`, este archivo, la especificación) y los mensajes de commit siguen en español.
+- Idioma: identificadores, rutas, claves JSON, esquema de BD, valores de enums, comentarios y mensajes de error en **inglés**. Los comentarios citan la sección de la especificación (`§7`, `§8.1`). La especificación también está en inglés; `README.md`, este archivo y los mensajes de commit siguen en español.
 - Errores como JSON `{"error": "..."}`:
   - 400: la ruta valida los campos obligatorios y convierte en 400 los `ValueError` de los servicios.
   - 401 y 403: los servicios lanzan `AuthenticationError` o `PermissionDenied`, y los manejadores globales de `src/main/routes.py` los convierten.
