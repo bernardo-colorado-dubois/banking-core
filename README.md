@@ -618,7 +618,6 @@ curl -s $BASE/account/$B/balance -H "Authorization: Bearer $TOKEN"
 
 Still open in §11 of the specification and not implemented:
 
-- Operation idempotency (an idempotency key per request).
 - Migrations: `migrations/` is empty and the schema is created with `create_admin.py`.
 - Automated tests: `tests/` is empty. A route is verified with `app.test_client()`.
 

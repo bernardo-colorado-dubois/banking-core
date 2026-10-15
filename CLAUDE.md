@@ -4,7 +4,7 @@ Core bancario mínimo en Flask + SQLAlchemy + PostgreSQL que registra cuentas y 
 
 La especificación y el código están en inglés y usan los mismos nombres: rutas, claves JSON, modelo, esquema de BD, valores de los enums, servicios, comentarios y mensajes de error.
 
-Estado actual: el módulo `user` (usuarios, RBAC, login con JWT, altas de admin y operador, desactivación, cambio de contraseña, perfil) está implementado. El módulo `account` tiene las tablas contables (§9), las aperturas de cuenta (§8.3, §8.4, §8.13) y las operaciones: depósito (fondeo), retiro, transferencia y consulta de saldo con historial de movimientos (§8.5 a §8.12), con las invariantes de §6 y el bloqueo de filas de §10, además de la lista de cuentas para operador y admin y el reverso de transacciones (§8.15). No hay idempotencia (pendiente de §11).
+Estado actual: el módulo `user` (usuarios, RBAC, login con JWT, altas de admin y operador, desactivación, cambio de contraseña, perfil) está implementado. El módulo `account` tiene las tablas contables (§9), las aperturas de cuenta (§8.3, §8.4, §8.13) y las operaciones: depósito (fondeo), retiro, transferencia y consulta de saldo con historial de movimientos (§8.5 a §8.12), con las invariantes de §6 y el bloqueo de filas de §10, además de la lista de cuentas para operador y admin y el reverso de transacciones (§8.15).
 
 ## Comandos
 

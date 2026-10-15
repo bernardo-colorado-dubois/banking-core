@@ -624,6 +624,5 @@ Since the balance is computed from movements, two concurrent operations on the s
 - [x] API endpoints (routes, payloads, responses, error codes).
 - [x] Account opening: required holder data.
 - [x] Reversals: whether they are implemented as a transaction with its own type that references the original.
-- [ ] Operation idempotency (for example, an idempotency key per request).
 - [ ] Migrations (Alembic or another tool).
 - [ ] Testing strategy.
