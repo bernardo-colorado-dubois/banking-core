@@ -1,54 +1,54 @@
 from decimal import Decimal, InvalidOperation
 from uuid import UUID
 
-from src.account.domain_model import Account, AccountRepository, ClaseCuenta, Lado, TipoTransaccion, Transaction
+from src.account.domain_model import Account, AccountRepository, AccountClass, Side, TransactionType, Transaction
 from src.account.dto import AccountDetail, AccountSummary, AccountBalance, AccountMovement, OperationResult, ReversalResult
-from src.user.domain_model import User, UserRepository, RoleRepository, Accion, Alcance
+from src.user.domain_model import User, UserRepository, RoleRepository, Action, Scope
 from src.user.dto import UserCreate, AuthenticatedUser
 from src.main.errors import PermissionDenied
 from src.main.utils import hash_password
 
 class ClientSignup:
-  """Alta de cliente con su primera cuenta VOSTRO (§8.3)."""
+  """Client signup with their first VOSTRO account (§8.3)."""
 
   def __init__(self,repository:AccountRepository,user_repository:UserRepository,role_repository:RoleRepository) -> None:
     self.repository = repository
     self.user_repository = user_repository
     self.role_repository = role_repository
 
-  def invoque(self,actor:AuthenticatedUser,dto:UserCreate,alias:str)->AccountDetail:
-    # No requiere GESTIONAR_USUARIOS: el alta va cubierta por ABRIR_CUENTA:VOSTRO (§7)
-    if not actor.tiene_permiso(Accion.ABRIR_CUENTA, Alcance.VOSTRO):
-      raise PermissionDenied('No tiene permiso para abrir cuentas de clientes')
+  def invoke(self,actor:AuthenticatedUser,dto:UserCreate,alias:str)->AccountDetail:
+    # Does not require MANAGE_USERS: the signup is covered by OPEN_ACCOUNT:VOSTRO (§7)
+    if not actor.has_permission(Action.OPEN_ACCOUNT, Scope.VOSTRO):
+      raise PermissionDenied('You do not have permission to open client accounts')
 
     try:
       if self.user_repository.find_by_email(dto.email) is not None:
-        raise ValueError(f'Ya existe un usuario con el email {dto.email}')
+        raise ValueError(f'A user with the email {dto.email} already exists')
 
-      rol = self.role_repository.find_by_name('CLIENTE')
-      if rol is None:
-        raise ValueError('No existe el rol CLIENTE')
+      role = self.role_repository.find_by_name('CLIENT')
+      if role is None:
+        raise ValueError('The role CLIENT does not exist')
 
-      # Solo se persiste el hash, nunca la contraseña en claro
+      # Only the hash is persisted, never the plain-text password
       user = User(
         email=dto.email,
-        nombre=dto.nombre,
+        name=dto.name,
         password_hash=hash_password(dto.password),
-        rol_id=rol.id,
-        activo=dto.activo,
-        debe_cambiar_password=dto.debe_cambiar_password
+        role_id=role.id,
+        active=dto.active,
+        must_change_password=dto.must_change_password
       )
-      # Usuario y cuenta van en un solo commit: se crean ambos o ninguno
-      account = Account(clase=ClaseCuenta.VOSTRO, alias=alias, titular=user)
+      # User and account go in a single commit: both are created or neither is
+      account = Account(account_class=AccountClass.VOSTRO, alias=alias, holder=user)
       self.repository.save(account)
 
       return AccountDetail(
         id=account.id,
-        clase=account.clase,
+        account_class=account.account_class,
         alias=account.alias,
-        titular=user.nombre,
-        titular_id=user.id,
-        creada_en=account.creada_en
+        holder=user.name,
+        holder_id=user.id,
+        created_at=account.created_at
       )
     finally:
       self.repository.close()
@@ -56,323 +56,323 @@ class ClientSignup:
       self.role_repository.close()
 
 class VostroAccountOpener:
-  """Cuenta VOSTRO adicional para un cliente que ya existe (§8.4)."""
+  """Additional VOSTRO account for an existing client (§8.4)."""
 
   def __init__(self,repository:AccountRepository,user_repository:UserRepository) -> None:
     self.repository = repository
     self.user_repository = user_repository
 
-  def invoque(self,actor:AuthenticatedUser,email:str,alias:str)->AccountDetail:
-    if not actor.tiene_permiso(Accion.ABRIR_CUENTA, Alcance.VOSTRO):
-      raise PermissionDenied('No tiene permiso para abrir cuentas de clientes')
+  def invoke(self,actor:AuthenticatedUser,email:str,alias:str)->AccountDetail:
+    if not actor.has_permission(Action.OPEN_ACCOUNT, Scope.VOSTRO):
+      raise PermissionDenied('You do not have permission to open client accounts')
 
     try:
       user = self.user_repository.find_by_email(email)
       if user is None:
-        raise ValueError(f'No existe un usuario con el email {email}')
+        raise ValueError(f'No user exists with the email {email}')
 
-      # No se puede expresar con un CHECK: se valida aquí (§9)
-      if user.rol.nombre != 'CLIENTE':
-        raise ValueError(f'El usuario {email} no es un cliente')
+      # Cannot be expressed with a CHECK: validated here (§9)
+      if user.role.name != 'CLIENT':
+        raise ValueError(f'The user {email} is not a client')
 
-      if not user.activo:
-        raise ValueError(f'El usuario {email} está inactivo')
+      if not user.active:
+        raise ValueError(f'The user {email} is inactive')
 
-      if self.repository.find_by_titular_and_alias(user.id, alias) is not None:
-        raise ValueError(f'El cliente ya tiene una cuenta con el alias {alias}')
+      if self.repository.find_by_holder_and_alias(user.id, alias) is not None:
+        raise ValueError(f'The client already has an account with the alias {alias}')
 
-      account = Account(clase=ClaseCuenta.VOSTRO, alias=alias, titular_id=user.id)
+      account = Account(account_class=AccountClass.VOSTRO, alias=alias, holder_id=user.id)
       self.repository.save(account)
 
       return AccountDetail(
         id=account.id,
-        clase=account.clase,
+        account_class=account.account_class,
         alias=account.alias,
-        titular=user.nombre,
-        titular_id=user.id,
-        creada_en=account.creada_en
+        holder=user.name,
+        holder_id=user.id,
+        created_at=account.created_at
       )
     finally:
       self.repository.close()
       self.user_repository.close()
 
 class NostroAccountOpener:
-  """Apertura de cuenta NOSTRO (§8.13)."""
+  """NOSTRO account opening (§8.13)."""
 
-  def __init__(self,repository:AccountRepository,banco_nombre:str) -> None:
+  def __init__(self,repository:AccountRepository,bank_name:str) -> None:
     self.repository = repository
-    self.banco_nombre = banco_nombre
+    self.bank_name = bank_name
 
-  def invoque(self,actor:AuthenticatedUser,alias:str)->AccountDetail:
-    if not actor.tiene_permiso(Accion.ABRIR_CUENTA, Alcance.NOSTRO):
-      raise PermissionDenied('No tiene permiso para abrir cuentas del banco')
+  def invoke(self,actor:AuthenticatedUser,alias:str)->AccountDetail:
+    if not actor.has_permission(Action.OPEN_ACCOUNT, Scope.NOSTRO):
+      raise PermissionDenied('You do not have permission to open bank accounts')
 
     try:
-      if self.repository.find_by_titular_and_alias(None, alias) is not None:
-        raise ValueError(f'Ya existe una cuenta del banco con el alias {alias}')
+      if self.repository.find_by_holder_and_alias(None, alias) is not None:
+        raise ValueError(f'A bank account with the alias {alias} already exists')
 
-      # Sin usuario titular: el titular es el nombre del banco (§7)
-      account = Account(clase=ClaseCuenta.NOSTRO, alias=alias, titular_id=None)
+      # No holder user: the holder is the bank's name (§7)
+      account = Account(account_class=AccountClass.NOSTRO, alias=alias, holder_id=None)
       self.repository.save(account)
 
       return AccountDetail(
         id=account.id,
-        clase=account.clase,
+        account_class=account.account_class,
         alias=account.alias,
-        titular=self.banco_nombre,
-        titular_id=None,
-        creada_en=account.creada_en
+        holder=self.bank_name,
+        holder_id=None,
+        created_at=account.created_at
       )
     finally:
       self.repository.close()
 
 class AccountLister:
-  """Lista de todas las cuentas con su titular y su saldo actual (§7). No modifica nada."""
+  """List of every account with its holder and current balance (§7). Modifies nothing."""
 
-  def __init__(self,repository:AccountRepository,banco_nombre:str) -> None:
+  def __init__(self,repository:AccountRepository,bank_name:str) -> None:
     self.repository = repository
-    self.banco_nombre = banco_nombre
+    self.bank_name = bank_name
 
-  def invoque(self,actor:AuthenticatedUser)->list[AccountSummary]:
-    # La lista trae cuentas de ambas clases: se exige VER sobre los dos alcances
-    if not (actor.tiene_permiso(Accion.VER, Alcance.VOSTRO) and actor.tiene_permiso(Accion.VER, Alcance.NOSTRO)):
-      raise PermissionDenied('No tiene permiso para ver la lista de cuentas')
+  def invoke(self,actor:AuthenticatedUser)->list[AccountSummary]:
+    # The list includes accounts of both classes: VIEW is required on both scopes
+    if not (actor.has_permission(Action.VIEW, Scope.VOSTRO) and actor.has_permission(Action.VIEW, Scope.NOSTRO)):
+      raise PermissionDenied('You do not have permission to view the account list')
 
     try:
-      cuentas = self.repository.find_all()
-      saldos = self.repository.balances()
+      accounts = self.repository.find_all()
+      balances = self.repository.balances()
       return [
         AccountSummary(
           id=account.id,
-          clase=account.clase,
+          account_class=account.account_class,
           alias=account.alias,
-          # Sin usuario titular: el titular es el nombre del banco (§7)
-          titular=account.titular.nombre if account.titular else self.banco_nombre,
-          titular_id=account.titular_id,
-          creada_en=account.creada_en,
-          # Una cuenta sin movimientos tiene saldo cero
-          saldo=saldos.get(account.id, Decimal('0.00'))
+          # No holder user: the holder is the bank's name (§7)
+          holder=account.holder.name if account.holder else self.bank_name,
+          holder_id=account.holder_id,
+          created_at=account.created_at,
+          # An account without movements has a zero balance
+          balance=balances.get(account.id, Decimal('0.00'))
         )
-        for account in cuentas
+        for account in accounts
       ]
     finally:
       self.repository.close()
 
-# NUMERIC(18,2): hasta 16 dígitos enteros
-MONTO_MAXIMO = Decimal('9999999999999999.99')
+# NUMERIC(18,2): up to 16 integer digits
+MAX_AMOUNT = Decimal('9999999999999999.99')
 
-def parse_monto(valor)->Decimal:
-  """Reglas comunes a las operaciones (§8): Decimal mayor que cero y con máximo 2 decimales."""
-  # Nunca float (§4.4): un número JSON se convierte desde su texto, no desde su valor binario
-  if isinstance(valor, bool) or not isinstance(valor, (str, int, float)):
-    raise ValueError('El monto no es válido')
+def parse_amount(value)->Decimal:
+  """Rules shared by the operations (§8): Decimal greater than zero with at most 2 decimals."""
+  # Never float (§4.4): a JSON number is converted from its text, not from its binary value
+  if isinstance(value, bool) or not isinstance(value, (str, int, float)):
+    raise ValueError('The amount is not valid')
   try:
-    monto = Decimal(str(valor).strip())
+    amount = Decimal(str(value).strip())
   except InvalidOperation:
-    raise ValueError('El monto no es válido')
+    raise ValueError('The amount is not valid')
 
-  if not monto.is_finite():
-    raise ValueError('El monto no es válido')
-  if monto <= 0:
-    raise ValueError('El monto debe ser mayor que cero')
-  if monto != monto.quantize(Decimal('0.01')):
-    raise ValueError('El monto admite máximo 2 decimales')
-  if monto > MONTO_MAXIMO:
-    raise ValueError('El monto excede el máximo permitido')
-  return monto.quantize(Decimal('0.01'))
+  if not amount.is_finite():
+    raise ValueError('The amount is not valid')
+  if amount <= 0:
+    raise ValueError('The amount must be greater than zero')
+  if amount != amount.quantize(Decimal('0.01')):
+    raise ValueError('The amount allows at most 2 decimals')
+  if amount > MAX_AMOUNT:
+    raise ValueError('The amount exceeds the maximum allowed')
+  return amount.quantize(Decimal('0.01'))
 
-def autorizar(actor:AuthenticatedUser,accion:Accion,account:Account)->None:
-  """Exige el permiso (acción, alcance) según el alcance de la cuenta frente al actor (§7)."""
-  if not actor.tiene_permiso(accion, account.alcance_para(actor.id)):
-    raise PermissionDenied('No tiene permiso para esta operación sobre la cuenta')
+def authorize(actor:AuthenticatedUser,action:Action,account:Account)->None:
+  """Requires the (action, scope) permission for the account's scope relative to the actor (§7)."""
+  if not actor.has_permission(action, account.scope_for(actor.id)):
+    raise PermissionDenied('You do not have permission for this operation on the account')
 
 class AccountFunder:
-  """Fondeo (§8.5 y §8.10): entra dinero externo a la cuenta."""
+  """Deposit (§8.5 and §8.10): external money comes into the account."""
 
   def __init__(self,repository:AccountRepository) -> None:
     self.repository = repository
 
-  def invoque(self,actor:AuthenticatedUser,cuenta_id:UUID,monto)->OperationResult:
-    monto = parse_monto(monto)
+  def invoke(self,actor:AuthenticatedUser,account_id:UUID,amount)->OperationResult:
+    amount = parse_amount(amount)
     try:
-      # Se bloquea la cuenta antes de calcular su saldo (§10)
-      cuentas = self.repository.find_by_ids_for_update([cuenta_id])
-      if not cuentas:
-        raise ValueError('No existe la cuenta')
-      account = cuentas[0]
-      autorizar(actor, Accion.FONDEAR, account)
+      # The account is locked before computing its balance (§10)
+      accounts = self.repository.find_by_ids_for_update([account_id])
+      if not accounts:
+        raise ValueError('The account does not exist')
+      account = accounts[0]
+      authorize(actor, Action.DEPOSIT, account)
 
-      saldo = self.repository.balance(account.id)
-      transaction = Transaction.fondeo(account.id, monto)
-      transaction.validar({account.id: saldo})
+      balance = self.repository.balance(account.id)
+      transaction = Transaction.deposit(account.id, amount)
+      transaction.validate({account.id: balance})
       self.repository.save_transaction(transaction)
 
       return OperationResult(
-        transaccion_id=transaction.id,
-        tipo=transaction.tipo,
-        monto=monto,
-        cuenta_id=account.id,
-        cuenta_destino_id=None,
-        saldo=saldo + monto,
-        creada_en=transaction.creada_en
+        transaction_id=transaction.id,
+        type=transaction.type,
+        amount=amount,
+        account_id=account.id,
+        destination_account_id=None,
+        balance=balance + amount,
+        created_at=transaction.created_at
       )
     finally:
       self.repository.close()
 
 class AccountWithdrawer:
-  """Retiro (§8.6 y §8.11): sale dinero de la cuenta hacia fuera del banco."""
+  """Withdrawal (§8.6 and §8.11): money leaves the account to outside the bank."""
 
   def __init__(self,repository:AccountRepository) -> None:
     self.repository = repository
 
-  def invoque(self,actor:AuthenticatedUser,cuenta_id:UUID,monto)->OperationResult:
-    monto = parse_monto(monto)
+  def invoke(self,actor:AuthenticatedUser,account_id:UUID,amount)->OperationResult:
+    amount = parse_amount(amount)
     try:
-      cuentas = self.repository.find_by_ids_for_update([cuenta_id])
-      if not cuentas:
-        raise ValueError('No existe la cuenta')
-      account = cuentas[0]
-      autorizar(actor, Accion.RETIRAR, account)
+      accounts = self.repository.find_by_ids_for_update([account_id])
+      if not accounts:
+        raise ValueError('The account does not exist')
+      account = accounts[0]
+      authorize(actor, Action.WITHDRAW, account)
 
-      # Sin fondos suficientes, validar rechaza el retiro (§6)
-      saldo = self.repository.balance(account.id)
-      transaction = Transaction.retiro(account.id, monto)
-      transaction.validar({account.id: saldo})
+      # Without enough funds, validate rejects the withdrawal (§6)
+      balance = self.repository.balance(account.id)
+      transaction = Transaction.withdrawal(account.id, amount)
+      transaction.validate({account.id: balance})
       self.repository.save_transaction(transaction)
 
       return OperationResult(
-        transaccion_id=transaction.id,
-        tipo=transaction.tipo,
-        monto=monto,
-        cuenta_id=account.id,
-        cuenta_destino_id=None,
-        saldo=saldo - monto,
-        creada_en=transaction.creada_en
+        transaction_id=transaction.id,
+        type=transaction.type,
+        amount=amount,
+        account_id=account.id,
+        destination_account_id=None,
+        balance=balance - amount,
+        created_at=transaction.created_at
       )
     finally:
       self.repository.close()
 
 class AccountTransfer:
-  """Transferencia entre cuentas del mismo banco (§8.7 y §8.12)."""
+  """Transfer between accounts of the same bank (§8.7 and §8.12)."""
 
   def __init__(self,repository:AccountRepository) -> None:
     self.repository = repository
 
-  def invoque(self,actor:AuthenticatedUser,origen_id:UUID,destino_id:UUID,monto)->OperationResult:
-    monto = parse_monto(monto)
-    if origen_id == destino_id:
-      raise ValueError('La cuenta origen y la cuenta destino deben ser distintas')
+  def invoke(self,actor:AuthenticatedUser,source_id:UUID,destination_id:UUID,amount)->OperationResult:
+    amount = parse_amount(amount)
+    if source_id == destination_id:
+      raise ValueError('The source and destination accounts must be different')
 
     try:
-      # Ambas cuentas se bloquean siempre en el mismo orden, por id (§10)
-      cuentas = {account.id: account for account in self.repository.find_by_ids_for_update([origen_id, destino_id])}
-      origen = cuentas.get(origen_id)
-      if origen is None:
-        raise ValueError('No existe la cuenta origen')
+      # Both accounts are always locked in the same order, by id (§10)
+      accounts = {account.id: account for account in self.repository.find_by_ids_for_update([source_id, destination_id])}
+      source = accounts.get(source_id)
+      if source is None:
+        raise ValueError('The source account does not exist')
 
-      # El permiso se evalúa sobre la cuenta origen; el destino solo debe existir (§7)
-      autorizar(actor, Accion.TRANSFERIR, origen)
-      destino = cuentas.get(destino_id)
-      if destino is None:
-        raise ValueError('No existe la cuenta destino')
+      # The permission is evaluated on the source account; the destination only has to exist (§7)
+      authorize(actor, Action.TRANSFER, source)
+      destination = accounts.get(destination_id)
+      if destination is None:
+        raise ValueError('The destination account does not exist')
 
-      saldo = self.repository.balance(origen.id)
-      transaction = Transaction.transferencia(origen.id, destino.id, monto)
-      transaction.validar({origen.id: saldo, destino.id: self.repository.balance(destino.id)})
+      balance = self.repository.balance(source.id)
+      transaction = Transaction.transfer(source.id, destination.id, amount)
+      transaction.validate({source.id: balance, destination.id: self.repository.balance(destination.id)})
       self.repository.save_transaction(transaction)
 
       return OperationResult(
-        transaccion_id=transaction.id,
-        tipo=transaction.tipo,
-        monto=monto,
-        cuenta_id=origen.id,
-        cuenta_destino_id=destino.id,
-        saldo=saldo - monto,
-        creada_en=transaction.creada_en
+        transaction_id=transaction.id,
+        type=transaction.type,
+        amount=amount,
+        account_id=source.id,
+        destination_account_id=destination.id,
+        balance=balance - amount,
+        created_at=transaction.created_at
       )
     finally:
       self.repository.close()
 
 class TransactionReverser:
-  """Reverso de un fondeo, un retiro o una transferencia (§8.15)."""
+  """Reversal of a deposit, a withdrawal or a transfer (§8.15)."""
 
   def __init__(self,repository:AccountRepository) -> None:
     self.repository = repository
 
-  def invoque(self,actor:AuthenticatedUser,transaccion_id:UUID)->ReversalResult:
-    # Sin ningún permiso de reverso no se revela si la transacción existe
-    if not any(accion == Accion.REVERSAR for accion, _ in actor.permisos):
-      raise PermissionDenied('No tiene permiso para reversar transacciones')
+  def invoke(self,actor:AuthenticatedUser,transaction_id:UUID)->ReversalResult:
+    # Without any reversal permission, whether the transaction exists is not revealed
+    if not any(action == Action.REVERSE for action, _ in actor.permissions):
+      raise PermissionDenied('You do not have permission to reverse transactions')
 
     try:
-      original = self.repository.find_transaction_by_id(transaccion_id)
+      original = self.repository.find_transaction_by_id(transaction_id)
       if original is None:
-        raise ValueError('No existe la transacción')
+        raise ValueError('The transaction does not exist')
 
-      # Las cuentas de la original se bloquean en orden de id (§10). Dos reversos
-      # simultáneos de la misma transacción se ejecutan uno tras otro
-      cuenta_ids = list({movimiento.cuenta_id for movimiento in original.movimientos})
-      cuentas = self.repository.find_by_ids_for_update(cuenta_ids)
-      for account in cuentas:
-        autorizar(actor, Accion.REVERSAR, account)
+      # The original's accounts are locked in id order (§10). Two concurrent
+      # reversals of the same transaction run one after the other
+      account_ids = list({movement.account_id for movement in original.movements})
+      accounts = self.repository.find_by_ids_for_update(account_ids)
+      for account in accounts:
+        authorize(actor, Action.REVERSE, account)
 
-      if original.tipo == TipoTransaccion.REVERSO:
-        raise ValueError('Un reverso no se puede reversar')
+      if original.type == TransactionType.REVERSAL:
+        raise ValueError('A reversal cannot be reversed')
 
-      # Se consulta con las cuentas ya bloqueadas
+      # Queried with the accounts already locked
       if self.repository.find_reversal_of(original.id) is not None:
-        raise ValueError('La transacción ya fue reversada')
+        raise ValueError('The transaction has already been reversed')
 
-      saldos = {account.id: self.repository.balance(account.id) for account in cuentas}
-      transaction = Transaction.reverso(original)
-      # §6.3 aplica igual: si el dinero ya no está en la cuenta, el reverso se rechaza
-      transaction.validar(saldos)
+      balances = {account.id: self.repository.balance(account.id) for account in accounts}
+      transaction = Transaction.reversal(original)
+      # §6.3 applies as well: if the money is no longer in the account, the reversal is rejected
+      transaction.validate(balances)
 
       result = dict(
-        transaccion_original_id=original.id,
-        tipo_original=original.tipo,
-        monto=original.movimientos[0].monto,
-        saldos={
-          cuenta_id: saldo + transaction.variacion(cuenta_id, Lado.PRINCIPAL)
-          for cuenta_id, saldo in saldos.items()
+        original_transaction_id=original.id,
+        original_type=original.type,
+        amount=original.movements[0].amount,
+        balances={
+          account_id: balance + transaction.change(account_id, Side.MAIN)
+          for account_id, balance in balances.items()
         }
       )
       self.repository.save_transaction(transaction)
 
-      return ReversalResult(transaccion_id=transaction.id, creada_en=transaction.creada_en, **result)
+      return ReversalResult(transaction_id=transaction.id, created_at=transaction.created_at, **result)
     finally:
       self.repository.close()
 
 class AccountBalanceReader:
-  """Consulta de saldo con su historial de movimientos (§8.8 y §8.9). No modifica nada."""
+  """Balance inquiry with its movement history (§8.8 and §8.9). Modifies nothing."""
 
   def __init__(self,repository:AccountRepository) -> None:
     self.repository = repository
 
-  def invoque(self,actor:AuthenticatedUser,cuenta_id:UUID)->AccountBalance:
+  def invoke(self,actor:AuthenticatedUser,account_id:UUID)->AccountBalance:
     try:
-      account = self.repository.find_by_id(cuenta_id)
+      account = self.repository.find_by_id(account_id)
       if account is None:
-        raise ValueError('No existe la cuenta')
-      autorizar(actor, Accion.VER, account)
+        raise ValueError('The account does not exist')
+      authorize(actor, Action.VIEW, account)
 
-      movimientos = [
+      movements = [
         AccountMovement(
-          movimiento_id=fila.movimiento_id,
-          transaccion_id=fila.transaccion_id,
-          tipo=fila.tipo,
-          naturaleza=fila.naturaleza,
-          monto=fila.monto,
-          saldo=fila.saldo,
-          creado_en=fila.creado_en
+          movement_id=row.movement_id,
+          transaction_id=row.transaction_id,
+          type=row.type,
+          entry_type=row.entry_type,
+          amount=row.amount,
+          balance=row.balance,
+          created_at=row.created_at
         )
-        for fila in self.repository.history(account.id)
+        for row in self.repository.history(account.id)
       ]
       return AccountBalance(
-        cuenta_id=account.id,
-        clase=account.clase,
+        account_id=account.id,
+        account_class=account.account_class,
         alias=account.alias,
-        movimientos=movimientos
+        movements=movements
       )
     finally:
       self.repository.close()

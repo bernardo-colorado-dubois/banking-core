@@ -1,5 +1,5 @@
 from src.main.database import Base
-from src.user.domain_model import User, Alcance
+from src.user.domain_model import User, Scope
 from sqlalchemy import CheckConstraint, Column, DateTime, ForeignKey, MetaData, Numeric, Table, UniqueConstraint, Uuid
 from sqlalchemy import DDL, Enum as SqlEnum, Row, case, event, func, select
 from sqlalchemy.orm import Mapped, mapped_column, relationship, joinedload, Session
@@ -9,211 +9,211 @@ from enum import Enum
 from typing import List
 from uuid import UUID, uuid4
 
-# §4.1 La etiqueta no cambia el comportamiento contable
-class ClaseCuenta(Enum):
-  NOSTRO = "NOSTRO"   # cuenta propia del banco
-  VOSTRO = "VOSTRO"   # cuenta de cliente
+# §4.1 The label does not change the accounting behavior
+class AccountClass(Enum):
+  NOSTRO = "NOSTRO"   # the bank's own account
+  VOSTRO = "VOSTRO"   # client account
 
-# §5 Distingue un retiro de una transferencia saliente
-class TipoTransaccion(Enum):
-  FONDEO = "FONDEO"
-  RETIRO = "RETIRO"
-  TRANSFERENCIA = "TRANSFERENCIA"
-  REVERSO = "REVERSO"
+# §5 Tells a withdrawal apart from an outgoing transfer
+class TransactionType(Enum):
+  DEPOSIT = "DEPOSIT"
+  WITHDRAWAL = "WITHDRAWAL"
+  TRANSFER = "TRANSFER"
+  REVERSAL = "REVERSAL"
 
-# §4.2 Los dos lados del libro de una cuenta
-class Lado(Enum):
-  PRINCIPAL = "PRINCIPAL"
-  CONTRAPARTIDA = "CONTRAPARTIDA"
+# §4.2 The two sides of an account's ledger
+class Side(Enum):
+  MAIN = "MAIN"
+  CONTRA = "CONTRA"
 
-class Naturaleza(Enum):
-  DEBITO = "DEBITO"
-  CREDITO = "CREDITO"
+class EntryType(Enum):
+  DEBIT = "DEBIT"
+  CREDIT = "CREDIT"
 
 class Account(Base):
 
-  __tablename__ = 'cuentas'
+  __tablename__ = 'accounts'
   __table_args__ = (
     CheckConstraint(
-      "(clase = 'VOSTRO' AND titular_id IS NOT NULL) OR (clase = 'NOSTRO' AND titular_id IS NULL)",
-      name='titular_segun_clase',
+      "(account_class = 'VOSTRO' AND holder_id IS NOT NULL) OR (account_class = 'NOSTRO' AND holder_id IS NULL)",
+      name='holder_by_class',
     ),
-    # El alias distingue las cuentas de un mismo titular; con titular nulo
-    # cubre a las NOSTRO entre sí
-    UniqueConstraint('titular_id', 'alias', postgresql_nulls_not_distinct=True),
+    # The alias tells apart the accounts of the same holder; with a null holder
+    # it covers the NOSTRO accounts among themselves
+    UniqueConstraint('holder_id', 'alias', postgresql_nulls_not_distinct=True),
   )
 
   id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-  clase: Mapped[ClaseCuenta] = mapped_column(nullable=False)
+  account_class: Mapped[AccountClass] = mapped_column(nullable=False)
   alias: Mapped[str] = mapped_column(nullable=False)
-  titular_id: Mapped[UUID | None] = mapped_column(ForeignKey('usuarios.id'), nullable=True)
-  creada_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-  titular: Mapped[User | None] = relationship()
+  holder_id: Mapped[UUID | None] = mapped_column(ForeignKey('users.id'), nullable=True)
+  created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+  holder: Mapped[User | None] = relationship()
 
-  # §7 Evaluación: el alcance de la cuenta frente al usuario autenticado
-  def alcance_para(self,usuario_id:UUID)->Alcance:
-    if self.clase == ClaseCuenta.NOSTRO:
-      return Alcance.NOSTRO
-    return Alcance.PROPIAS if self.titular_id == usuario_id else Alcance.VOSTRO
+  # §7 Evaluation: the account's scope relative to the authenticated user
+  def scope_for(self,user_id:UUID)->Scope:
+    if self.account_class == AccountClass.NOSTRO:
+      return Scope.NOSTRO
+    return Scope.OWN if self.holder_id == user_id else Scope.VOSTRO
 
 class Transaction(Base):
 
-  __tablename__ = 'transacciones'
+  __tablename__ = 'transactions'
   __table_args__ = (
-    # Solo un reverso referencia a otra transacción (§8.15)
+    # Only a reversal references another transaction (§8.15)
     CheckConstraint(
-      "(tipo = 'REVERSO') = (transaccion_original_id IS NOT NULL)",
-      name='original_segun_tipo',
+      "(type = 'REVERSAL') = (original_transaction_id IS NOT NULL)",
+      name='original_by_type',
     ),
   )
 
   id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-  tipo: Mapped[TipoTransaccion] = mapped_column(nullable=False)
-  # Único: una transacción se reversa una sola vez (§8.15)
-  transaccion_original_id: Mapped[UUID | None] = mapped_column(ForeignKey('transacciones.id'), unique=True, nullable=True)
-  descripcion: Mapped[str | None] = mapped_column(nullable=True)
-  creada_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-  movimientos: Mapped[List["Movement"]] = relationship(back_populates='transaccion')
+  type: Mapped[TransactionType] = mapped_column(nullable=False)
+  # Unique: a transaction is reversed only once (§8.15)
+  original_transaction_id: Mapped[UUID | None] = mapped_column(ForeignKey('transactions.id'), unique=True, nullable=True)
+  description: Mapped[str | None] = mapped_column(nullable=True)
+  created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+  movements: Mapped[List["Movement"]] = relationship(back_populates='transaction')
 
-  # §5 Cada operación arma sus movimientos; nunca se toca un saldo directamente
+  # §5 Each operation builds its movements; a balance is never touched directly
   @classmethod
-  def fondeo(cls,cuenta_id:UUID,monto:Decimal)->"Transaction":
-    return cls(tipo=TipoTransaccion.FONDEO, movimientos=entrada(cuenta_id, monto))
+  def deposit(cls,account_id:UUID,amount:Decimal)->"Transaction":
+    return cls(type=TransactionType.DEPOSIT, movements=inflow(account_id, amount))
 
   @classmethod
-  def retiro(cls,cuenta_id:UUID,monto:Decimal)->"Transaction":
-    return cls(tipo=TipoTransaccion.RETIRO, movimientos=salida(cuenta_id, monto))
+  def withdrawal(cls,account_id:UUID,amount:Decimal)->"Transaction":
+    return cls(type=TransactionType.WITHDRAWAL, movements=outflow(account_id, amount))
 
-  # Cada lado pasa por su propia contrapartida: 4 movimientos
+  # Each side goes through its own contra: 4 movements
   @classmethod
-  def transferencia(cls,origen_id:UUID,destino_id:UUID,monto:Decimal)->"Transaction":
+  def transfer(cls,source_id:UUID,destination_id:UUID,amount:Decimal)->"Transaction":
     return cls(
-      tipo=TipoTransaccion.TRANSFERENCIA,
-      movimientos=salida(origen_id, monto) + entrada(destino_id, monto)
+      type=TransactionType.TRANSFER,
+      movements=outflow(source_id, amount) + inflow(destination_id, amount)
     )
 
-  # Los mismos movimientos de la original con la naturaleza opuesta (§8.15).
-  # La original no se toca: los movimientos son inmutables (§4.4)
+  # The same movements as the original with the opposite entry type (§8.15).
+  # The original is not touched: movements are immutable (§4.4)
   @classmethod
-  def reverso(cls,original:"Transaction")->"Transaction":
+  def reversal(cls,original:"Transaction")->"Transaction":
     return cls(
-      tipo=TipoTransaccion.REVERSO,
-      transaccion_original_id=original.id,
-      movimientos=[
+      type=TransactionType.REVERSAL,
+      original_transaction_id=original.id,
+      movements=[
         Movement(
-          cuenta_id=movimiento.cuenta_id,
-          lado=movimiento.lado,
-          naturaleza=Naturaleza.DEBITO if movimiento.naturaleza == Naturaleza.CREDITO else Naturaleza.CREDITO,
-          monto=movimiento.monto
+          account_id=movement.account_id,
+          side=movement.side,
+          entry_type=EntryType.DEBIT if movement.entry_type == EntryType.CREDIT else EntryType.CREDIT,
+          amount=movement.amount
         )
-        for movimiento in original.movimientos
+        for movement in original.movements
       ]
     )
 
-  def validar(self,saldos:dict[UUID,Decimal])->None:
-    """Invariantes de §6. `saldos` trae el saldo actual del principal de cada cuenta involucrada."""
-    # 4. Montos positivos
-    if any(movimiento.monto <= 0 for movimiento in self.movimientos):
-      raise ValueError('El monto debe ser mayor que cero')
+  def validate(self,balances:dict[UUID,Decimal])->None:
+    """§6 invariants. `balances` holds the current main-side balance of each involved account."""
+    # 4. Positive amounts
+    if any(movement.amount <= 0 for movement in self.movements):
+      raise ValueError('The amount must be greater than zero')
 
-    # 5. En una transferencia, origen y destino son distintos
-    cuentas = {movimiento.cuenta_id for movimiento in self.movimientos}
-    if self.tipo == TipoTransaccion.TRANSFERENCIA and len(cuentas) != 2:
-      raise ValueError('La cuenta origen y la cuenta destino deben ser distintas')
+    # 5. In a transfer, source and destination are different
+    accounts = {movement.account_id for movement in self.movements}
+    if self.type == TransactionType.TRANSFER and len(accounts) != 2:
+      raise ValueError('The source and destination accounts must be different')
 
-    # 1. Balance de la transacción: débitos = créditos
-    if sum(movimiento.importe for movimiento in self.movimientos) != 0:
-      raise ValueError('La transacción no está balanceada')
+    # 1. Transaction balance: debits = credits
+    if sum(movement.signed_amount for movement in self.movements) != 0:
+      raise ValueError('The transaction is not balanced')
 
-    for cuenta_id in cuentas:
-      principal = self.variacion(cuenta_id, Lado.PRINCIPAL)
-      # 2. Balance por cuenta: principal + contrapartida = 0
-      if principal + self.variacion(cuenta_id, Lado.CONTRAPARTIDA) != 0:
-        raise ValueError('La cuenta no cuadra con su contrapartida')
-      # 3. Sin saldos negativos en el principal
-      if saldos[cuenta_id] + principal < 0:
-        raise ValueError('Fondos insuficientes')
+    for account_id in accounts:
+      main = self.change(account_id, Side.MAIN)
+      # 2. Per-account balance: main + contra = 0
+      if main + self.change(account_id, Side.CONTRA) != 0:
+        raise ValueError('The account does not match its contra')
+      # 3. No negative balances on the main side
+      if balances[account_id] + main < 0:
+        raise ValueError('Insufficient funds')
 
-  def variacion(self,cuenta_id:UUID,lado:Lado)->Decimal:
+  def change(self,account_id:UUID,side:Side)->Decimal:
     return sum(
-      (movimiento.importe for movimiento in self.movimientos
-        if movimiento.cuenta_id == cuenta_id and movimiento.lado == lado),
+      (movement.signed_amount for movement in self.movements
+        if movement.account_id == account_id and movement.side == side),
       Decimal(0)
     )
 
-# §4.4 Inmutables: nunca se editan ni se borran
+# §4.4 Immutable: never edited or deleted
 class Movement(Base):
 
-  __tablename__ = 'movimientos'
+  __tablename__ = 'movements'
   __table_args__ = (
-    CheckConstraint('monto > 0', name='monto_positivo'),
+    CheckConstraint('amount > 0', name='positive_amount'),
   )
 
   id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-  transaccion_id: Mapped[UUID] = mapped_column(ForeignKey('transacciones.id'), nullable=False)
-  cuenta_id: Mapped[UUID] = mapped_column(ForeignKey('cuentas.id'), nullable=False)
-  lado: Mapped[Lado] = mapped_column(nullable=False)
-  naturaleza: Mapped[Naturaleza] = mapped_column(nullable=False)
-  monto: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
-  # clock_timestamp() y no now(): now() es la hora en que empezó la transacción de BD,
-  # antes de obtener el bloqueo de la cuenta (§10). Con la hora real de inserción,
-  # los movimientos de una cuenta quedan en el orden en que se aplicaron
-  creado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.clock_timestamp(), nullable=False)
-  transaccion: Mapped[Transaction] = relationship(back_populates='movimientos')
+  transaction_id: Mapped[UUID] = mapped_column(ForeignKey('transactions.id'), nullable=False)
+  account_id: Mapped[UUID] = mapped_column(ForeignKey('accounts.id'), nullable=False)
+  side: Mapped[Side] = mapped_column(nullable=False)
+  entry_type: Mapped[EntryType] = mapped_column(nullable=False)
+  amount: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
+  # clock_timestamp() and not now(): now() is the time the DB transaction started,
+  # before acquiring the account lock (§10). With the actual insert time,
+  # an account's movements stay in the order in which they were applied
+  created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.clock_timestamp(), nullable=False)
+  transaction: Mapped[Transaction] = relationship(back_populates='movements')
 
-  # §4.3 saldo = créditos − débitos
+  # §4.3 balance = credits − debits
   @property
-  def importe(self)->Decimal:
-    return self.monto if self.naturaleza == Naturaleza.CREDITO else -self.monto
+  def signed_amount(self)->Decimal:
+    return self.amount if self.entry_type == EntryType.CREDIT else -self.amount
 
-# Entra dinero a la cuenta: débito a la contrapartida, crédito al principal (§5)
-def entrada(cuenta_id:UUID,monto:Decimal)->List[Movement]:
+# Money comes into the account: debit to the contra, credit to the main side (§5)
+def inflow(account_id:UUID,amount:Decimal)->List[Movement]:
   return [
-    Movement(cuenta_id=cuenta_id, lado=Lado.CONTRAPARTIDA, naturaleza=Naturaleza.DEBITO, monto=monto),
-    Movement(cuenta_id=cuenta_id, lado=Lado.PRINCIPAL, naturaleza=Naturaleza.CREDITO, monto=monto),
+    Movement(account_id=account_id, side=Side.CONTRA, entry_type=EntryType.DEBIT, amount=amount),
+    Movement(account_id=account_id, side=Side.MAIN, entry_type=EntryType.CREDIT, amount=amount),
   ]
 
-# Sale dinero de la cuenta: débito al principal, crédito a la contrapartida (§5)
-def salida(cuenta_id:UUID,monto:Decimal)->List[Movement]:
+# Money leaves the account: debit to the main side, credit to the contra (§5)
+def outflow(account_id:UUID,amount:Decimal)->List[Movement]:
   return [
-    Movement(cuenta_id=cuenta_id, lado=Lado.PRINCIPAL, naturaleza=Naturaleza.DEBITO, monto=monto),
-    Movement(cuenta_id=cuenta_id, lado=Lado.CONTRAPARTIDA, naturaleza=Naturaleza.CREDITO, monto=monto),
+    Movement(account_id=account_id, side=Side.MAIN, entry_type=EntryType.DEBIT, amount=amount),
+    Movement(account_id=account_id, side=Side.CONTRA, entry_type=EntryType.CREDIT, amount=amount),
   ]
 
-# Historial de una cuenta: cada movimiento del principal con el saldo que dejó.
-# El saldo acumulado se calcula en SQL (§4.3: créditos − débitos), no en Python
-CREAR_HISTORIAL = """
-CREATE OR REPLACE VIEW historial_cuentas AS
+# An account's history: each main-side movement with the balance it left.
+# The running balance is computed in SQL (§4.3: credits − debits), not in Python
+CREATE_ACCOUNT_HISTORY = """
+CREATE OR REPLACE VIEW account_history AS
 SELECT
-  m.id AS movimiento_id,
-  m.cuenta_id,
-  m.transaccion_id,
-  t.tipo,
-  m.naturaleza,
-  m.monto,
-  SUM(CASE WHEN m.naturaleza = 'CREDITO' THEN m.monto ELSE -m.monto END)
-    OVER (PARTITION BY m.cuenta_id ORDER BY m.creado_en, m.id) AS saldo,
-  m.creado_en
-FROM movimientos m
-JOIN transacciones t ON t.id = m.transaccion_id
-WHERE m.lado = 'PRINCIPAL'
+  m.id AS movement_id,
+  m.account_id,
+  m.transaction_id,
+  t.type,
+  m.entry_type,
+  m.amount,
+  SUM(CASE WHEN m.entry_type = 'CREDIT' THEN m.amount ELSE -m.amount END)
+    OVER (PARTITION BY m.account_id ORDER BY m.created_at, m.id) AS balance,
+  m.created_at
+FROM movements m
+JOIN transactions t ON t.id = m.transaction_id
+WHERE m.side = 'MAIN'
 """
 
-# La vista se crea y se borra junto con las tablas (create_all y drop_all)
-event.listen(Base.metadata, 'after_create', DDL(CREAR_HISTORIAL))
-event.listen(Base.metadata, 'before_drop', DDL('DROP VIEW IF EXISTS historial_cuentas'))
+# The view is created and dropped together with the tables (create_all and drop_all)
+event.listen(Base.metadata, 'after_create', DDL(CREATE_ACCOUNT_HISTORY))
+event.listen(Base.metadata, 'before_drop', DDL('DROP VIEW IF EXISTS account_history'))
 
-# Va en un MetaData aparte para que create_all no la cree como tabla
-historial_cuentas = Table(
-  'historial_cuentas', MetaData(),
-  Column('movimiento_id', Uuid, primary_key=True),
-  Column('cuenta_id', Uuid),
-  Column('transaccion_id', Uuid),
-  Column('tipo', SqlEnum(TipoTransaccion)),
-  Column('naturaleza', SqlEnum(Naturaleza)),
-  Column('monto', Numeric(18, 2)),
-  Column('saldo', Numeric(18, 2)),
-  Column('creado_en', DateTime(timezone=True)),
+# Lives in a separate MetaData so create_all does not create it as a table
+account_history = Table(
+  'account_history', MetaData(),
+  Column('movement_id', Uuid, primary_key=True),
+  Column('account_id', Uuid),
+  Column('transaction_id', Uuid),
+  Column('type', SqlEnum(TransactionType)),
+  Column('entry_type', SqlEnum(EntryType)),
+  Column('amount', Numeric(18, 2)),
+  Column('balance', Numeric(18, 2)),
+  Column('created_at', DateTime(timezone=True)),
 )
 
 class AccountRepository:
@@ -224,56 +224,56 @@ class AccountRepository:
   def find_by_id(self,id:UUID)->Account|None:
     return self.session.query(Account).filter(Account.id==id).one_or_none()
 
-  # De la más antigua a la más reciente, con el titular ya cargado
+  # Oldest to newest, with the holder already loaded
   def find_all(self)->List[Account]:
-    return self.session.query(Account).options(joinedload(Account.titular)).order_by(Account.creada_en, Account.id).all()
+    return self.session.query(Account).options(joinedload(Account.holder)).order_by(Account.created_at, Account.id).all()
 
-  def find_by_titular_and_alias(self,titular_id:UUID|None,alias:str)->Account|None:
+  def find_by_holder_and_alias(self,holder_id:UUID|None,alias:str)->Account|None:
     return self.session.query(Account).filter(
-      Account.titular_id.is_not_distinct_from(titular_id),
+      Account.holder_id.is_not_distinct_from(holder_id),
       Account.alias==alias
     ).one_or_none()
 
-  # §10 Bloquea las filas antes de calcular saldos; el orden por id evita deadlocks.
-  # El bloqueo se libera con el commit de save_transaction o con close
+  # §10 Locks the rows before computing balances; ordering by id avoids deadlocks.
+  # The lock is released by the commit in save_transaction or by close
   def find_by_ids_for_update(self,ids:List[UUID])->List[Account]:
     return self.session.query(Account).filter(Account.id.in_(ids)).order_by(Account.id).with_for_update().all()
 
-  # §4.3 El saldo no se almacena: créditos − débitos del principal
+  # §4.3 The balance is not stored: credits − debits on the main side
   def balance(self,id:UUID)->Decimal:
-    importe = case((Movement.naturaleza==Naturaleza.CREDITO, Movement.monto), else_=-Movement.monto)
-    saldo = self.session.query(func.coalesce(func.sum(importe), 0)).filter(
-      Movement.cuenta_id==id,
-      Movement.lado==Lado.PRINCIPAL
+    signed_amount = case((Movement.entry_type==EntryType.CREDIT, Movement.amount), else_=-Movement.amount)
+    balance = self.session.query(func.coalesce(func.sum(signed_amount), 0)).filter(
+      Movement.account_id==id,
+      Movement.side==Side.MAIN
     ).scalar()
-    return Decimal(saldo).quantize(Decimal('0.01'))
+    return Decimal(balance).quantize(Decimal('0.01'))
 
-  # Saldo de todas las cuentas en una sola consulta; las que no tienen movimientos no aparecen
+  # Balance of every account in a single query; accounts without movements are missing
   def balances(self)->dict[UUID,Decimal]:
-    importe = case((Movement.naturaleza==Naturaleza.CREDITO, Movement.monto), else_=-Movement.monto)
-    filas = self.session.query(Movement.cuenta_id, func.sum(importe)).filter(
-      Movement.lado==Lado.PRINCIPAL
-    ).group_by(Movement.cuenta_id).all()
-    return {cuenta_id: Decimal(saldo).quantize(Decimal('0.01')) for cuenta_id, saldo in filas}
+    signed_amount = case((Movement.entry_type==EntryType.CREDIT, Movement.amount), else_=-Movement.amount)
+    rows = self.session.query(Movement.account_id, func.sum(signed_amount)).filter(
+      Movement.side==Side.MAIN
+    ).group_by(Movement.account_id).all()
+    return {account_id: Decimal(balance).quantize(Decimal('0.01')) for account_id, balance in rows}
 
-  # Del movimiento más antiguo al más reciente; el saldo de la última fila es el actual
+  # Oldest movement to newest; the balance on the last row is the current one
   def history(self,id:UUID)->List[Row]:
     return self.session.execute(
-      select(historial_cuentas)
-        .where(historial_cuentas.c.cuenta_id==id)
-        .order_by(historial_cuentas.c.creado_en, historial_cuentas.c.movimiento_id)
+      select(account_history)
+        .where(account_history.c.account_id==id)
+        .order_by(account_history.c.created_at, account_history.c.movement_id)
     ).all()
 
   def find_transaction_by_id(self,id:UUID)->Transaction|None:
     return self.session.query(Transaction).filter(Transaction.id==id).one_or_none()
 
   def find_reversal_of(self,id:UUID)->Transaction|None:
-    return self.session.query(Transaction).filter(Transaction.transaccion_original_id==id).one_or_none()
+    return self.session.query(Transaction).filter(Transaction.original_transaction_id==id).one_or_none()
 
   def close(self)->None:
     self.session.close()
 
-  # Todos los movimientos van en un solo commit: se registran todos o ninguno (§5)
+  # All movements go in a single commit: either all are recorded or none (§5)
   def save_transaction(self,transaction:Transaction)->None:
     try:
       self.session.add(transaction)
@@ -284,7 +284,7 @@ class AccountRepository:
     finally:
       self.session.close()
 
-  # Un titular nuevo se guarda en cascada, en la misma transacción que la cuenta (§8.3)
+  # A new holder is saved in cascade, in the same transaction as the account (§8.3)
   def save(self,account:Account)->None:
     try:
       self.session.add(account)

@@ -5,13 +5,13 @@ from src.main.container import DIContainer
 from src.main.utils import bearer_token
 from src.user.application_service import UserAuthenticator
 
-def authenticated(permitir_password_pendiente: bool = False):
-  """Exige un token válido y pasa el usuario autenticado a la ruta como `actor`."""
+def authenticated(allow_pending_password: bool = False):
+  """Requires a valid token and passes the authenticated user to the view as `actor`."""
   def decorator(view):
     @wraps(view)
     @inject
     def wrapper(*args, authenticator: UserAuthenticator = Provide[DIContainer.user_authenticator], **kwargs):
-      actor = authenticator.invoque(bearer_token(), permitir_password_pendiente)
+      actor = authenticator.invoke(bearer_token(), allow_pending_password)
       return view(*args, actor=actor, **kwargs)
     return wrapper
   return decorator

@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from flask import request
 import jwt
 
-# bcrypt solo admite contraseñas de hasta 72 bytes (no caracteres)
+# bcrypt only accepts passwords of up to 72 bytes (not characters)
 MAX_PASSWORD_BYTES = 72
 
 def hash_password(password: str) -> str:
@@ -15,13 +15,13 @@ def check_password(password: str, hashed: str) -> bool:
   try:
     return checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
   except ValueError:
-    # Contraseña de más de 72 bytes o hash que no es bcrypt: no coincide
+    # Password over 72 bytes or a non-bcrypt hash: no match
     return False
 
-def create_token(user_id: str, rol: str, secret: str, minutes: int) -> str:
+def create_token(user_id: str, role: str, secret: str, minutes: int) -> str:
   """Create a signed HS256 access token with the user id and role name."""
   now = datetime.now(timezone.utc)
-  payload = {'sub': user_id, 'rol': rol, 'iat': now, 'exp': now + timedelta(minutes=minutes)}
+  payload = {'sub': user_id, 'role': role, 'iat': now, 'exp': now + timedelta(minutes=minutes)}
   return jwt.encode(payload, secret, algorithm='HS256')
 
 def decode_token(token: str, secret: str) -> dict | None:

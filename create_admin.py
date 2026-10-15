@@ -1,19 +1,19 @@
 from src.main.container import DIContainer
 from src.main.database import Base
-from src.user.domain_model import Role,Permission,Accion,Alcance
+from src.user.domain_model import Role,Permission,Action,Scope
 from src.user.dto import UserCreate
 from dotenv import load_dotenv
 import os
 
-# Cargar variables de entorno siempre
+# Always load environment variables
 load_dotenv()
 
-# Acceder a las variables de entorno
+# Read environment variables
 database_url = os.getenv("DATABASE_URL")
 admin_email = os.getenv("ADMIN_EMAIL")
 admin_password = os.getenv("ADMIN_PASSWORD")
 
-# Inicializar el contenedor
+# Initialize the container
 container = DIContainer()
 container.config.connection_string.override(database_url)
 engine = container.engine()
@@ -21,31 +21,31 @@ engine = container.engine()
 Base.metadata.drop_all(engine)
 Base.metadata.create_all(engine)
 
-# Semilla fija de roles y permisos (§9, Datos semilla)
-operaciones = [Accion.VER, Accion.FONDEAR, Accion.RETIRAR, Accion.TRANSFERIR]
+# Fixed seed of roles and permissions (§9, Seed data)
+operations = [Action.VIEW, Action.DEPOSIT, Action.WITHDRAW, Action.TRANSFER]
 roles = {
-  'CLIENTE': [(accion, Alcance.PROPIAS) for accion in operaciones],
-  'OPERADOR': [(accion, Alcance.NOSTRO) for accion in operaciones] + [
-    (Accion.ABRIR_CUENTA, Alcance.NOSTRO),
-    (Accion.VER, Alcance.VOSTRO),
-    (Accion.ABRIR_CUENTA, Alcance.VOSTRO),
+  'CLIENT': [(action, Scope.OWN) for action in operations],
+  'OPERATOR': [(action, Scope.NOSTRO) for action in operations] + [
+    (Action.OPEN_ACCOUNT, Scope.NOSTRO),
+    (Action.VIEW, Scope.VOSTRO),
+    (Action.OPEN_ACCOUNT, Scope.VOSTRO),
   ],
-  'ADMIN': [(accion, alcance) for alcance in (Alcance.VOSTRO, Alcance.NOSTRO) for accion in operaciones] + [
-    (Accion.ABRIR_CUENTA, Alcance.VOSTRO),
-    (Accion.ABRIR_CUENTA, Alcance.NOSTRO),
-    (Accion.REVERSAR, Alcance.VOSTRO),
-    (Accion.REVERSAR, Alcance.NOSTRO),
-    (Accion.GESTIONAR_USUARIOS, None),
+  'ADMIN': [(action, scope) for scope in (Scope.VOSTRO, Scope.NOSTRO) for action in operations] + [
+    (Action.OPEN_ACCOUNT, Scope.VOSTRO),
+    (Action.OPEN_ACCOUNT, Scope.NOSTRO),
+    (Action.REVERSE, Scope.VOSTRO),
+    (Action.REVERSE, Scope.NOSTRO),
+    (Action.MANAGE_USERS, None),
   ],
 }
 
 session = container.session()
-permisos = {}
-for nombre, claves in roles.items():
-  for clave in claves:
-    if clave not in permisos:
-      permisos[clave] = Permission(accion=clave[0], alcance=clave[1])
-  session.add(Role(nombre=nombre, permisos=[permisos[clave] for clave in claves]))
+permissions = {}
+for name, keys in roles.items():
+  for key in keys:
+    if key not in permissions:
+      permissions[key] = Permission(action=key[0], scope=key[1])
+  session.add(Role(name=name, permissions=[permissions[key] for key in keys]))
 session.commit()
 session.close()
 
@@ -53,13 +53,13 @@ admins = [
   UserCreate(
     email=admin_email,
     password=admin_password,
-    rol='ADMIN',
-    activo=True,
-    debe_cambiar_password=True
+    role='ADMIN',
+    active=True,
+    must_change_password=True
   )
 ]
 
 service = container.user_creator()
 
 for admin in admins:
-  service.invoque(dto=admin)
+  service.invoke(dto=admin)

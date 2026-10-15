@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from src.user.domain_model import User, UserRepository, RoleRepository, Accion
+from src.user.domain_model import User, UserRepository, RoleRepository, Action
 from src.user.dto import UserCreate, AuthenticatedUser, UserProfile
 from src.main.errors import AuthenticationError, PermissionDenied
 from src.main.utils import MAX_PASSWORD_BYTES, hash_password, check_password, create_token, decode_token
@@ -11,24 +11,24 @@ class UserCreator:
     self.repository = repository
     self.role_repository = role_repository
 
-  def invoque(self,dto:UserCreate)->User:
-    # Las lecturas no cierran la sesión: se cierra aquí para devolver la conexión al pool
+  def invoke(self,dto:UserCreate)->User:
+    # Reads don't close the session: it is closed here to return the connection to the pool
     try:
       if self.repository.find_by_email(dto.email) is not None:
-        raise ValueError(f'Ya existe un usuario con el email {dto.email}')
+        raise ValueError(f'A user with the email {dto.email} already exists')
 
-      rol = self.role_repository.find_by_name(dto.rol)
-      if rol is None:
-        raise ValueError(f'No existe el rol {dto.rol}')
+      role = self.role_repository.find_by_name(dto.role)
+      if role is None:
+        raise ValueError(f'The role {dto.role} does not exist')
 
-      # Solo se persiste el hash, nunca la contraseña en claro
+      # Only the hash is persisted, never the plain-text password
       user = User(
         email=dto.email,
-        nombre=dto.nombre,
+        name=dto.name,
         password_hash=hash_password(dto.password),
-        rol_id=rol.id,
-        activo=dto.activo,
-        debe_cambiar_password=dto.debe_cambiar_password
+        role_id=role.id,
+        active=dto.active,
+        must_change_password=dto.must_change_password
       )
       self.repository.save(user)
       return user
@@ -37,22 +37,22 @@ class UserCreator:
       self.role_repository.close()
 
 class UserSignup:
-  """Alta de administrador y de operador (§8.1 y §8.2)."""
+  """Admin and operator signup (§8.1 and §8.2)."""
 
-  ROLES = ('ADMIN', 'OPERADOR')
+  ROLES = ('ADMIN', 'OPERATOR')
 
   def __init__(self,user_creator:UserCreator) -> None:
     self.user_creator = user_creator
 
-  def invoque(self,actor:AuthenticatedUser,dto:UserCreate)->User:
-    if not actor.tiene_permiso(Accion.GESTIONAR_USUARIOS):
-      raise PermissionDenied('No tiene permiso para gestionar usuarios')
+  def invoke(self,actor:AuthenticatedUser,dto:UserCreate)->User:
+    if not actor.has_permission(Action.MANAGE_USERS):
+      raise PermissionDenied('You do not have permission to manage users')
 
-    # Los clientes se dan de alta junto con su cuenta (§8.3), no por aquí
-    if dto.rol not in self.ROLES:
-      raise ValueError(f'No se puede dar de alta un usuario con el rol {dto.rol}')
+    # Clients sign up together with their account (§8.3), not here
+    if dto.role not in self.ROLES:
+      raise ValueError(f'Cannot sign up a user with the role {dto.role}')
 
-    return self.user_creator.invoque(dto)
+    return self.user_creator.invoke(dto)
 
 class UserLogin:
 
@@ -61,76 +61,76 @@ class UserLogin:
     self.jwt_secret = jwt_secret
     self.jwt_minutes = jwt_minutes
 
-  def invoque(self,email:str,password:str)->tuple[str,User]:
+  def invoke(self,email:str,password:str)->tuple[str,User]:
     try:
       user = self.repository.find_by_email(email)
 
-      # Mismo error en los tres casos para no revelar qué emails existen
-      if user is None or not user.activo or not check_password(password, user.password_hash):
-        raise AuthenticationError('Credenciales inválidas')
+      # Same error in all three cases so as not to reveal which emails exist
+      if user is None or not user.active or not check_password(password, user.password_hash):
+        raise AuthenticationError('Invalid credentials')
 
-      token = create_token(str(user.id), user.rol.nombre, self.jwt_secret, self.jwt_minutes)
+      token = create_token(str(user.id), user.role.name, self.jwt_secret, self.jwt_minutes)
       return token, user
     finally:
       self.repository.close()
 
 class UserAuthenticator:
-  """Traduce el token a un usuario autenticado (id, rol, permisos)."""
+  """Translates the token into an authenticated user (id, role, permissions)."""
 
   def __init__(self,repository:UserRepository,jwt_secret:str) -> None:
     self.repository = repository
     self.jwt_secret = jwt_secret
 
-  def invoque(self,token:str|None,permitir_password_pendiente:bool=False)->AuthenticatedUser:
+  def invoke(self,token:str|None,allow_pending_password:bool=False)->AuthenticatedUser:
     payload = decode_token(token, self.jwt_secret) if token else None
     if payload is None:
-      raise AuthenticationError('Token inválido o expirado')
+      raise AuthenticationError('Invalid or expired token')
 
     try:
       user_id = UUID(payload['sub'])
     except ValueError:
-      raise AuthenticationError('Token inválido o expirado')
+      raise AuthenticationError('Invalid or expired token')
 
-    # Se consulta en cada solicitud: una desactivación o un cambio de rol
-    # surten efecto sin esperar a que expire el token (§7)
+    # Looked up on every request: a deactivation or a role change
+    # takes effect without waiting for the token to expire (§7)
     try:
       user = self.repository.find_by_id(user_id)
-      if user is None or not user.activo:
-        raise AuthenticationError('Token inválido o expirado')
+      if user is None or not user.active:
+        raise AuthenticationError('Invalid or expired token')
 
-      # Con la contraseña inicial solo se permite cambiarla (§7)
-      if user.debe_cambiar_password and not permitir_password_pendiente:
-        raise PermissionDenied('Debe cambiar su contraseña antes de operar')
+      # With the initial password the only thing allowed is changing it (§7)
+      if user.must_change_password and not allow_pending_password:
+        raise PermissionDenied('You must change your password before operating')
 
       return AuthenticatedUser(
         id=user.id,
-        rol=user.rol.nombre,
-        permisos=frozenset((permiso.accion, permiso.alcance) for permiso in user.rol.permisos)
+        role=user.role.name,
+        permissions=frozenset((permission.action, permission.scope) for permission in user.role.permissions)
       )
     finally:
       self.repository.close()
 
 class UserProfileReader:
-  """Perfil del usuario autenticado, sin datos sensibles."""
+  """Profile of the authenticated user, without sensitive data."""
 
   def __init__(self,repository:UserRepository) -> None:
     self.repository = repository
 
-  def invoque(self,actor:AuthenticatedUser)->UserProfile:
+  def invoke(self,actor:AuthenticatedUser)->UserProfile:
     try:
       user = self.repository.find_by_id(actor.id)
       if user is None:
-        raise AuthenticationError('Token inválido o expirado')
+        raise AuthenticationError('Invalid or expired token')
 
-      # El DTO se arma antes de cerrar la sesión: el rol se carga de forma diferida
+      # The DTO is built before closing the session: the role is lazy-loaded
       return UserProfile(
         id=user.id,
         email=user.email,
-        nombre=user.nombre,
-        rol=user.rol.nombre,
-        activo=user.activo,
-        debe_cambiar_password=user.debe_cambiar_password,
-        creado_en=user.creado_en
+        name=user.name,
+        role=user.role.name,
+        active=user.active,
+        must_change_password=user.must_change_password,
+        created_at=user.created_at
       )
     finally:
       self.repository.close()
@@ -140,63 +140,63 @@ class PasswordChanger:
   def __init__(self,repository:UserRepository) -> None:
     self.repository = repository
 
-  def invoque(self,actor:AuthenticatedUser,password_actual:str,password_nueva:str)->None:
+  def invoke(self,actor:AuthenticatedUser,current_password:str,new_password:str)->None:
     try:
       user = self.repository.find_by_id(actor.id)
-      if user is None or not check_password(password_actual, user.password_hash):
-        raise ValueError('La contraseña actual no es correcta')
+      if user is None or not check_password(current_password, user.password_hash):
+        raise ValueError('The current password is incorrect')
 
-      if len(password_nueva.encode('utf-8')) > MAX_PASSWORD_BYTES:
-        raise ValueError(f'La contraseña no puede exceder {MAX_PASSWORD_BYTES} bytes')
+      if len(new_password.encode('utf-8')) > MAX_PASSWORD_BYTES:
+        raise ValueError(f'The password cannot exceed {MAX_PASSWORD_BYTES} bytes')
 
-      if password_nueva == password_actual:
-        raise ValueError('La contraseña nueva debe ser distinta de la actual')
+      if new_password == current_password:
+        raise ValueError('The new password must be different from the current one')
 
-      user.password_hash = hash_password(password_nueva)
-      user.debe_cambiar_password = False
+      user.password_hash = hash_password(new_password)
+      user.must_change_password = False
       self.repository.update(user)
     finally:
       self.repository.close()
 
 class UserDeactivator:
-  """Desactivación de usuario (§8.14)."""
+  """User deactivation (§8.14)."""
 
   def __init__(self,repository:UserRepository) -> None:
     self.repository = repository
 
-  def invoque(self,actor:AuthenticatedUser,email:str)->UserProfile:
-    if not actor.tiene_permiso(Accion.GESTIONAR_USUARIOS):
-      raise PermissionDenied('No tiene permiso para gestionar usuarios')
+  def invoke(self,actor:AuthenticatedUser,email:str)->UserProfile:
+    if not actor.has_permission(Action.MANAGE_USERS):
+      raise PermissionDenied('You do not have permission to manage users')
 
     try:
-      # Los admins activos se bloquean primero: dos desactivaciones simultáneas
-      # se ejecutan una tras otra y la segunda ya ve el resultado de la primera (§7)
+      # Active admins are locked first: two concurrent deactivations run
+      # one after the other and the second one sees the result of the first (§7)
       admins = self.repository.find_active_admins_for_update()
 
       user = self.repository.find_by_email_for_update(email)
       if user is None:
-        raise ValueError(f'No existe un usuario con el email {email}')
+        raise ValueError(f'No user exists with the email {email}')
 
-      if not user.activo:
-        raise ValueError(f'El usuario {email} ya está inactivo')
+      if not user.active:
+        raise ValueError(f'The user {email} is already inactive')
 
-      # Al menos un admin activo (§7)
+      # At least one active admin (§7)
       if user in admins and len(admins) == 1:
-        raise ValueError('No se puede desactivar al único admin activo')
+        raise ValueError('Cannot deactivate the only active admin')
 
-      user.activo = False
+      user.active = False
 
-      # El DTO se arma antes de cerrar la sesión: el rol se carga de forma diferida
-      perfil = UserProfile(
+      # The DTO is built before closing the session: the role is lazy-loaded
+      profile = UserProfile(
         id=user.id,
         email=user.email,
-        nombre=user.nombre,
-        rol=user.rol.nombre,
-        activo=user.activo,
-        debe_cambiar_password=user.debe_cambiar_password,
-        creado_en=user.creado_en
+        name=user.name,
+        role=user.role.name,
+        active=user.active,
+        must_change_password=user.must_change_password,
+        created_at=user.created_at
       )
       self.repository.update(user)
-      return perfil
+      return profile
     finally:
       self.repository.close()

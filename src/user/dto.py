@@ -3,37 +3,37 @@ from datetime import datetime
 from uuid import UUID
 
 from src.main.utils import MAX_PASSWORD_BYTES
-from src.user.domain_model import Accion, Alcance
+from src.user.domain_model import Action, Scope
 
 @dataclass
 class UserCreate:
   email: str
   password: str
-  rol: str
-  activo: bool = True
-  debe_cambiar_password: bool = True
-  nombre: str | None = None
+  role: str
+  active: bool = True
+  must_change_password: bool = True
+  name: str | None = None
 
   def __post_init__(self) -> None:
     if len(self.password.encode('utf-8')) > MAX_PASSWORD_BYTES:
-      raise ValueError(f'La contraseña no puede exceder {MAX_PASSWORD_BYTES} bytes')
+      raise ValueError(f'The password cannot exceed {MAX_PASSWORD_BYTES} bytes')
 
 @dataclass(frozen=True)
 class UserProfile:
-  """Datos no sensibles del usuario: nunca incluye el hash de la contraseña."""
+  """Non-sensitive user data: never includes the password hash."""
   id: UUID
   email: str
-  nombre: str | None
-  rol: str
-  activo: bool
-  debe_cambiar_password: bool
-  creado_en: datetime
+  name: str | None
+  role: str
+  active: bool
+  must_change_password: bool
+  created_at: datetime
 
 @dataclass(frozen=True)
 class AuthenticatedUser:
   id: UUID
-  rol: str
-  permisos: frozenset[tuple[Accion, Alcance | None]]
+  role: str
+  permissions: frozenset[tuple[Action, Scope | None]]
 
-  def tiene_permiso(self, accion: Accion, alcance: Alcance | None = None) -> bool:
-    return (accion, alcance) in self.permisos
+  def has_permission(self, action: Action, scope: Scope | None = None) -> bool:
+    return (action, scope) in self.permissions

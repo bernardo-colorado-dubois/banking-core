@@ -32,7 +32,7 @@ class DIContainer(DeclarativeContainer):
     UserLogin,
     repository=user_repository,
     jwt_secret=config.jwt_secret,
-    jwt_minutes=config.jwt_expiracion_minutos
+    jwt_minutes=config.jwt_expiration_minutes
   )
   user_authenticator = Factory(
     UserAuthenticator,
@@ -59,12 +59,12 @@ class DIContainer(DeclarativeContainer):
   nostro_account_opener = Factory(
     NostroAccountOpener,
     repository=account_repository,
-    banco_nombre=config.banco_nombre
+    bank_name=config.bank_name
   )
   account_lister = Factory(
     AccountLister,
     repository=account_repository,
-    banco_nombre=config.banco_nombre
+    bank_name=config.bank_name
   )
   account_funder = Factory(AccountFunder, repository=account_repository)
   account_withdrawer = Factory(AccountWithdrawer, repository=account_repository)

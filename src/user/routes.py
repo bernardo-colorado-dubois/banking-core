@@ -10,27 +10,27 @@ from src.user.dto import UserCreate, AuthenticatedUser
 
 blueprint = Blueprint("user", __name__)
 
-# Perfil del usuario autenticado. Se permite con la contraseña pendiente
-# para que el cliente pueda leer debe_cambiar_password (§7)
+# Profile of the authenticated user. Allowed with a pending password
+# so the client can read must_change_password (§7)
 @blueprint.route("/")
-@authenticated(permitir_password_pendiente=True)
+@authenticated(allow_pending_password=True)
 @inject
 def profile(
   actor: AuthenticatedUser,
   user_profile_reader: UserProfileReader = Provide[DIContainer.user_profile_reader]
 ):
-  perfil = user_profile_reader.invoque(actor)
+  profile = user_profile_reader.invoke(actor)
   return jsonify(
-    id=str(perfil.id),
-    email=perfil.email,
-    nombre=perfil.nombre,
-    rol=perfil.rol,
-    activo=perfil.activo,
-    debe_cambiar_password=perfil.debe_cambiar_password,
-    creado_en=perfil.creado_en.isoformat()
+    id=str(profile.id),
+    email=profile.email,
+    name=profile.name,
+    role=profile.role,
+    active=profile.active,
+    must_change_password=profile.must_change_password,
+    created_at=profile.created_at.isoformat()
   )
 
-# §7 Autenticación: email y contraseña a cambio del access token
+# §7 Authentication: email and password in exchange for the access token
 @blueprint.route("/login", methods=["POST"])
 @inject
 def login(user_login: UserLogin = Provide[DIContainer.user_login]):
@@ -38,51 +38,51 @@ def login(user_login: UserLogin = Provide[DIContainer.user_login]):
   email = data.get('email')
   password = data.get('password')
   if not isinstance(email, str) or not email.strip() or not isinstance(password, str) or not password:
-    return jsonify(error='email y password son obligatorios'), 400
+    return jsonify(error='email and password are required'), 400
 
-  token, user = user_login.invoque(email.strip(), password)
-  return jsonify(token=token, debe_cambiar_password=user.debe_cambiar_password)
+  token, user = user_login.invoke(email.strip(), password)
+  return jsonify(token=token, must_change_password=user.must_change_password)
 
-# Cambio de contraseña: lo único permitido mientras debe_cambiar_password sea true (§7)
+# Password change: the only thing allowed while must_change_password is true (§7)
 @blueprint.route("/password", methods=["POST"])
-@authenticated(permitir_password_pendiente=True)
+@authenticated(allow_pending_password=True)
 @inject
 def change_password(
   actor: AuthenticatedUser,
   password_changer: PasswordChanger = Provide[DIContainer.password_changer]
 ):
   data = json_body()
-  password_actual = data.get('password_actual')
-  password_nueva = data.get('password_nueva')
-  if not isinstance(password_actual, str) or not password_actual or not isinstance(password_nueva, str) or not password_nueva:
-    return jsonify(error='password_actual y password_nueva son obligatorios'), 400
+  current_password = data.get('current_password')
+  new_password = data.get('new_password')
+  if not isinstance(current_password, str) or not current_password or not isinstance(new_password, str) or not new_password:
+    return jsonify(error='current_password and new_password are required'), 400
 
   try:
-    password_changer.invoque(actor, password_actual, password_nueva)
+    password_changer.invoke(actor, current_password, new_password)
   except ValueError as error:
     return jsonify(error=str(error)), 400
 
-  return jsonify(debe_cambiar_password=False)
+  return jsonify(must_change_password=False)
 
-def signup(rol: str, email, password, actor: AuthenticatedUser, user_signup: UserSignup):
+def signup(role: str, email, password, actor: AuthenticatedUser, user_signup: UserSignup):
   if not isinstance(email, str) or not email.strip() or not isinstance(password, str) or not password:
-    return jsonify(error='email y password son obligatorios'), 400
+    return jsonify(error='email and password are required'), 400
 
-  # El DTO deja activo y debe_cambiar_password en true (§8, reglas de alta)
+  # The DTO leaves active and must_change_password set to true (§8, signup rules)
   try:
-    user = user_signup.invoque(actor, UserCreate(email=email.strip(), password=password, rol=rol))
+    user = user_signup.invoke(actor, UserCreate(email=email.strip(), password=password, role=role))
   except ValueError as error:
     return jsonify(error=str(error)), 400
 
   return jsonify(
     id=str(user.id),
     email=user.email,
-    rol=rol,
-    activo=user.activo,
-    debe_cambiar_password=user.debe_cambiar_password
+    role=role,
+    active=user.active,
+    must_change_password=user.must_change_password
   ), 201
 
-# §8.1 Alta de administrador
+# §8.1 Admin signup
 @blueprint.route("/admin", methods=["POST"])
 @authenticated()
 @inject
@@ -96,11 +96,11 @@ def signup_admin(
 
   return signup('ADMIN', email, password, actor, user_signup)
 
-# §8.2 Alta de operador
-@blueprint.route("/operador", methods=["POST"])
+# §8.2 Operator signup
+@blueprint.route("/operator", methods=["POST"])
 @authenticated()
 @inject
-def signup_operador(
+def signup_operator(
   actor: AuthenticatedUser,
   user_signup: UserSignup = Provide[DIContainer.user_signup]
 ):
@@ -108,10 +108,10 @@ def signup_operador(
   email = data.get('email')
   password = data.get('password')
 
-  return signup('OPERADOR', email, password, actor, user_signup)
+  return signup('OPERATOR', email, password, actor, user_signup)
 
-# §8.14 Desactivación de usuario
-@blueprint.route("/desactivar", methods=["POST"])
+# §8.14 User deactivation
+@blueprint.route("/deactivate", methods=["POST"])
 @authenticated()
 @inject
 def deactivate(
@@ -121,17 +121,17 @@ def deactivate(
   data = json_body()
   email = data.get('email')
   if not isinstance(email, str) or not email.strip():
-    return jsonify(error='email es obligatorio'), 400
+    return jsonify(error='email is required'), 400
 
   try:
-    perfil = user_deactivator.invoque(actor, email.strip())
+    profile = user_deactivator.invoke(actor, email.strip())
   except ValueError as error:
     return jsonify(error=str(error)), 400
 
   return jsonify(
-    id=str(perfil.id),
-    email=perfil.email,
-    rol=perfil.rol,
-    activo=perfil.activo,
-    debe_cambiar_password=perfil.debe_cambiar_password
+    id=str(profile.id),
+    email=profile.email,
+    role=profile.role,
+    active=profile.active,
+    must_change_password=profile.must_change_password
   )
