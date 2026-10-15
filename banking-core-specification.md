@@ -39,7 +39,6 @@ The code is organized by business module, and each module holds its layers insid
 docker-compose.yml        # PostgreSQL
 .env.example              # reference environment variables (.env is not committed)
 app.py                    # entry point: creates the Flask app from src/main
-tests/
 src/
 ├── main/                 # shared: configuration, DB session, JWT, error handling, route registration, dependency injection
 ├── user/                 # users, roles, RBAC, authentication
@@ -623,4 +622,3 @@ Since the balance is computed from movements, two concurrent operations on the s
 - [x] API endpoints (routes, payloads, responses, error codes).
 - [x] Account opening: required holder data.
 - [x] Reversals: whether they are implemented as a transaction with its own type that references the original.
-- [ ] Testing strategy.

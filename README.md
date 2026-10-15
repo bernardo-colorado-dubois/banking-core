@@ -17,7 +17,6 @@ The full specification is in [`banking-core-specification.md`](banking-core-spec
 - [Data model](#data-model)
 - [Concurrency](#concurrency)
 - [End-to-end example](#end-to-end-example)
-- [Pending](#pending)
 - [License](#license)
 
 ## Features
@@ -613,12 +612,6 @@ curl -s -X POST $BASE/account/$A/transfer \
 curl -s $BASE/account/$A/balance -H "Authorization: Bearer $TOKEN"
 curl -s $BASE/account/$B/balance -H "Authorization: Bearer $TOKEN"
 ```
-
-## Pending
-
-Still open in §11 of the specification and not implemented:
-
-- Automated tests: `tests/` is empty. A route is verified with `app.test_client()`.
 
 ## License
 

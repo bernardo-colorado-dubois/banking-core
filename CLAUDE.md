@@ -15,7 +15,7 @@ venv/bin/python app.py          # servidor de desarrollo en http://localhost:808
 ```
 
 - `create_admin.py` hace `drop_all` + `create_all`, que también borran y crean la vista `account_history`. Es la única forma de crear el esquema. `drop_all` solo borra las tablas del modelo actual: si se renombra una tabla, la anterior hay que borrarla a mano.
-- No hay pruebas todavía (`tests/` está vacío, la estrategia es un pendiente de §11). Para verificar una ruta se usa `app.test_client()`.
+- Para verificar una ruta se usa `app.test_client()`.
 - Las dependencias están fijadas en `requirements.txt` y se instalan en `venv/`.
 
 ## Variables de entorno
