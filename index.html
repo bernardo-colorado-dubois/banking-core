@@ -1,10 +1,10 @@
 <!doctype html>
-<html lang="es">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Core bancario · Partida doble en Flask y PostgreSQL</title>
-  <meta name="description" content="Core bancario mínimo en Flask, SQLAlchemy y PostgreSQL que registra cuentas y movimientos bajo partida doble. El saldo no se guarda: se calcula.">
+  <title>Banking core · Double entry on Flask and PostgreSQL</title>
+  <meta name="description" content="A minimal banking core on Flask, SQLAlchemy and PostgreSQL that records accounts and movements under double-entry bookkeeping. The balance is not stored: it is computed.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
@@ -23,7 +23,7 @@
     code, pre, .mono { font-family: 'JetBrains Mono', ui-monospace, monospace; }
     .wrap { width: 100%; max-width: 1120px; margin: 0 auto; padding: 0 24px; }
 
-    /* Navegación */
+    /* Navigation */
     header {
       position: sticky; top: 0; z-index: 10; border-bottom: 1px solid var(--line);
       background: rgba(10, 17, 32, .82); backdrop-filter: blur(14px);
@@ -64,7 +64,7 @@
     .db { color: var(--amber); background: rgba(251, 191, 36, .13); }
     .g { color: var(--green); } .a { color: var(--amber); }
 
-    /* Historial de ejemplo */
+    /* Sample history */
     .ledger { overflow: hidden; box-shadow: 0 30px 80px -30px rgba(0, 0, 0, .7); }
     .ledger .lh { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--line); }
     .ledger .lh b { font-size: 16px; } .ledger .lh b span { color: var(--muted); font-weight: 500; }
@@ -77,13 +77,13 @@
     .formula { padding: 14px 20px; border-top: 1px solid var(--line); font-size: 14px; color: var(--muted); background: rgba(52, 211, 153, .06); }
     .formula b { color: var(--green); }
 
-    /* Cifras */
+    /* Figures */
     .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; padding-bottom: 24px; }
     .stat { padding: 20px 22px; }
     .stat .n { font-size: 44px; font-weight: 800; letter-spacing: -.04em; line-height: 1; color: var(--green); }
     .stat .l { font-size: 14.5px; color: var(--muted); margin-top: 8px; line-height: 1.35; }
 
-    /* Secciones */
+    /* Sections */
     section { padding: 72px 0; }
     section + section { border-top: 1px solid var(--line); }
     .eyebrow { font-size: 12.5px; font-weight: 700; letter-spacing: .14em; color: var(--green); }
@@ -96,7 +96,7 @@
     .feat p { font-size: 15px; color: var(--muted); margin-top: 8px; }
     .feat code { font-size: 13px; color: var(--ink); }
 
-    /* Modelo contable */
+    /* Accounting model */
     .cap { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 16px; margin-top: 36px; font-weight: 700; }
     .cap span { color: var(--muted); font-weight: 500; font-size: 14.5px; }
     .pair { display: grid; grid-template-columns: 1fr 44px 1fr; align-items: center; margin-top: 12px; }
@@ -119,7 +119,7 @@
     .inv .n, .st .n { flex: none; display: grid; place-items: center; font-weight: 800; color: var(--green); }
     .inv .n { width: 26px; height: 26px; border-radius: 7px; background: rgba(52, 211, 153, .14); font-size: 13.5px; }
 
-    /* Arquitectura */
+    /* Architecture */
     .steps { margin-top: 36px; position: relative; }
     .steps::before { content: ""; position: absolute; left: 19px; top: 20px; bottom: 20px; width: 2px; background: linear-gradient(var(--blue), var(--green)); }
     .st { display: grid; grid-template-columns: 40px 1fr; gap: 18px; padding: 10px 0; }
@@ -128,7 +128,7 @@
     .st h3 small { font-family: 'Inter', sans-serif; font-size: 11px; letter-spacing: .12em; color: var(--muted); margin-left: 10px; }
     .st p { font-size: 15.5px; color: var(--muted); margin-top: 3px; }
 
-    /* Tablas */
+    /* Tables */
     .tbl { margin-top: 36px; overflow-x: auto; }
     table { width: 100%; border-collapse: collapse; font-size: 15px; min-width: 640px; }
     th { text-align: left; font-size: 11.5px; letter-spacing: .12em; color: var(--muted); font-weight: 700; padding: 13px 18px; background: rgba(255, 255, 255, .03); }
@@ -140,7 +140,7 @@
     .get { color: var(--blue); background: rgba(122, 162, 255, .14); }
     .post { color: var(--green); background: rgba(52, 211, 153, .13); }
 
-    /* Puesta en marcha */
+    /* Getting started */
     pre { margin-top: 36px; padding: 22px 24px; overflow-x: auto; font-size: 14px; line-height: 1.75; color: var(--ink); }
     pre .c { color: var(--muted); }
     .warn { margin-top: 16px; padding: 16px 20px; border-radius: 14px; border: 1px solid rgba(251, 191, 36, .35); background: rgba(251, 191, 36, .07); font-size: 15px; color: var(--muted); }
@@ -184,14 +184,14 @@
 
 <header>
   <nav class="wrap">
-    <a class="brand" href="#"><i></i>Core bancario</a>
+    <a class="brand" href="#"><i></i>Banking core</a>
     <div class="links">
-      <a href="#funcionalidades">Funcionalidades</a>
-      <a href="#modelo">Modelo contable</a>
-      <a href="#arquitectura">Arquitectura</a>
-      <a href="#permisos">Permisos</a>
+      <a href="#features">Features</a>
+      <a href="#model">Accounting model</a>
+      <a href="#architecture">Architecture</a>
+      <a href="#permissions">Permissions</a>
       <a href="#api">API</a>
-      <a href="#empezar">Empezar</a>
+      <a href="#start">Get started</a>
     </div>
   </nav>
 </header>
@@ -200,127 +200,133 @@
   <div class="hero">
     <div class="wrap">
       <div>
-        <span class="tag">PARTIDA DOBLE · SOLO MXN</span>
-        <h1>Un core bancario donde el saldo <em>se calcula</em></h1>
-        <p class="lead">No se guarda en ninguna columna. Cada peso entra y sale con movimientos balanceados bajo <b>partida doble</b>, y ninguno se edita ni se borra.</p>
+        <span class="tag">DOUBLE ENTRY · MXN ONLY</span>
+        <h1>A banking core where the balance <em>is computed</em></h1>
+        <p class="lead">It is not stored in any column. Every peso comes in and goes out through balanced movements under <b>double-entry bookkeeping</b>, and none of them is ever edited or deleted.</p>
         <div class="cta">
-          <a class="btn primary" href="#empezar">Puesta en marcha</a>
-          <a class="btn" href="#api">Ver la API</a>
+          <a class="btn primary" href="#start">Get started</a>
+          <a class="btn" href="#api">See the API</a>
         </div>
       </div>
       <div class="card ledger">
-        <div class="lh"><b>Ahorro <span>· cuenta VOSTRO</span></b><code>GET /account/{id}/balance</code></div>
-        <div class="row h"><div>TIPO</div><div>NATURALEZA</div><div>MONTO</div><div>SALDO</div></div>
-        <div class="row"><div>Fondeo</div><div><span class="pill cr">CREDIT</span></div><div class="mono g">+1000.00</div><div class="mono">1000.00</div></div>
-        <div class="row"><div>Retiro</div><div><span class="pill db">DEBIT</span></div><div class="mono a">−250.50</div><div class="mono">749.50</div></div>
-        <div class="row"><div>Transferencia</div><div><span class="pill db">DEBIT</span></div><div class="mono a">−100.00</div><div class="mono">649.50</div></div>
-        <div class="formula mono"><b>saldo</b> = créditos − débitos del principal</div>
+        <div class="lh"><b>Savings <span>· VOSTRO account</span></b><code>GET /account/{id}/balance</code></div>
+        <div class="row h"><div>TYPE</div><div>ENTRY</div><div>AMOUNT</div><div>BALANCE</div></div>
+        <div class="row"><div>Deposit</div><div><span class="pill cr">CREDIT</span></div><div class="mono g">+1000.00</div><div class="mono">1000.00</div></div>
+        <div class="row"><div>Withdrawal</div><div><span class="pill db">DEBIT</span></div><div class="mono a">−250.50</div><div class="mono">749.50</div></div>
+        <div class="row"><div>Transfer</div><div><span class="pill db">DEBIT</span></div><div class="mono a">−100.00</div><div class="mono">649.50</div></div>
+        <div class="row"><div>Reversal</div><div><span class="pill cr">CREDIT</span></div><div class="mono g">+100.00</div><div class="mono">749.50</div></div>
+        <div class="formula mono"><b>balance</b> = credits − debits on the main side</div>
       </div>
     </div>
   </div>
 
   <div class="wrap stats">
-    <div class="card stat"><div class="n">0</div><div class="l">columnas de saldo en la base de datos</div></div>
-    <div class="card stat"><div class="n">5</div><div class="l">invariantes validadas antes de persistir</div></div>
-    <div class="card stat"><div class="n">3</div><div class="l">roles con permisos de acción y alcance</div></div>
-    <div class="card stat"><div class="n">13</div><div class="l">endpoints JSON para usuarios y cuentas</div></div>
+    <div class="card stat"><div class="n">0</div><div class="l">balance columns in the database</div></div>
+    <div class="card stat"><div class="n">5</div><div class="l">invariants validated before persisting</div></div>
+    <div class="card stat"><div class="n">3</div><div class="l">roles with action and scope permissions</div></div>
+    <div class="card stat"><div class="n">15</div><div class="l">JSON endpoints for users and accounts</div></div>
   </div>
 
-  <section id="funcionalidades">
+  <section id="features">
     <div class="wrap">
-      <div class="eyebrow">FUNCIONALIDADES</div>
-      <h2>Lo que ya hace</h2>
-      <p class="intro">Un core mínimo, pero con las piezas que importan: acceso, cuentas, operaciones y un libro que siempre cuadra.</p>
+      <div class="eyebrow">FEATURES</div>
+      <h2>What it already does</h2>
+      <p class="intro">A minimal core, but with the pieces that matter: access, accounts, operations and a ledger that always balances.</p>
       <div class="grid3">
-        <div class="card feat"><h3>Usuarios y acceso</h3><p>Login con JWT, cambio de contraseña obligatorio en el primer ingreso, perfil y alta de administradores y operadores.</p></div>
-        <div class="card feat"><h3>Permisos, nunca roles</h3><p>Tres roles fijos, cada uno con permisos de la forma <i>(acción, alcance)</i>. La autorización nunca pregunta por el rol.</p></div>
-        <div class="card feat"><h3>Apertura de cuentas</h3><p>Alta de cliente con su primera cuenta, cuentas adicionales para un cliente existente y cuentas propias del banco.</p></div>
-        <div class="card feat"><h3>Operaciones atómicas</h3><p>Fondeo, retiro y transferencia entre cuentas del mismo banco: se registran todos sus movimientos o ninguno.</p></div>
-        <div class="card feat"><h3>Saldo e historial</h3><p>Los movimientos de una cuenta con el saldo que dejó cada uno, calculado en SQL por la vista <code>account_history</code>.</p></div>
-        <div class="card feat"><h3>Concurrencia segura</h3><p>Bloqueo de filas con <code>SELECT … FOR UPDATE</code> para que dos operaciones simultáneas no gasten el mismo saldo.</p></div>
+        <div class="card feat"><h3>Users and access</h3><p>JWT login, mandatory password change on first login, profile, admin and operator signup, and user deactivation.</p></div>
+        <div class="card feat"><h3>Permissions, never roles</h3><p>Three fixed roles, each with permissions of the form <i>(action, scope)</i>. Authorization never asks for the role.</p></div>
+        <div class="card feat"><h3>Account opening</h3><p>Client signup with their first account, additional accounts for an existing client, and the bank's own accounts.</p></div>
+        <div class="card feat"><h3>Atomic operations</h3><p>Deposit, withdrawal, transfer and reversal, each one a balanced double-entry transaction: either all of its movements are recorded or none are.</p></div>
+        <div class="card feat"><h3>Balance and history</h3><p>An account's movements with the balance each one left, computed in SQL by the <code>account_history</code> view.</p></div>
+        <div class="card feat"><h3>Safe concurrency</h3><p>Row locking with <code>SELECT … FOR UPDATE</code> so two concurrent operations cannot spend the same balance.</p></div>
       </div>
     </div>
   </section>
 
-  <section id="modelo">
+  <section id="model">
     <div class="wrap">
-      <div class="eyebrow">MODELO CONTABLE</div>
-      <h2>Cada cuenta cuadra <em>consigo misma</em></h2>
-      <p class="intro">Toda cuenta tiene dos lados en el libro: el <b>principal</b>, que es el saldo que ve el titular, y la <b>contrapartida</b>, que representa el exterior. El principal es de naturaleza acreedora: un crédito lo aumenta y un débito lo disminuye.</p>
+      <div class="eyebrow">ACCOUNTING MODEL</div>
+      <h2>Every account balances <em>with itself</em></h2>
+      <p class="intro">Every account has two sides in the ledger: the <b>main</b> side, which is the balance the holder sees, and the <b>contra</b>, which represents the outside. The main side has a credit nature: a credit increases it and a debit decreases it.</p>
 
-      <div class="cap">Transferencia de 100.00 de A a B <span>4 movimientos · 1 transacción atómica</span></div>
+      <div class="cap">Transfer of 100.00 from A to B <span>4 movements · 1 atomic transaction</span></div>
       <div class="pair">
         <div class="card acct">
-          <div class="hd">Cuenta A <span>· origen</span></div>
+          <div class="hd">Account A <span>· source</span></div>
           <div class="side"><div><div class="nm">MAIN</div><span class="pill db">DEBIT</span></div><div class="v mono a">−100.00</div></div>
           <div class="side"><div><div class="nm">CONTRA</div><span class="pill cr">CREDIT</span></div><div class="v mono g">+100.00</div></div>
-          <div class="zero mono">principal + contrapartida = 0</div>
+          <div class="zero mono">main + contra = 0</div>
         </div>
         <div class="arrow">→</div>
         <div class="card acct">
-          <div class="hd">Cuenta B <span>· destino</span></div>
+          <div class="hd">Account B <span>· destination</span></div>
           <div class="side"><div><div class="nm">MAIN</div><span class="pill cr">CREDIT</span></div><div class="v mono g">+100.00</div></div>
           <div class="side"><div><div class="nm">CONTRA</div><span class="pill db">DEBIT</span></div><div class="v mono a">−100.00</div></div>
-          <div class="zero mono">principal + contrapartida = 0</div>
+          <div class="zero mono">main + contra = 0</div>
         </div>
       </div>
 
-      <div class="grid2" style="margin-top:16px">
-        <div class="card op"><h3>Fondeo <span>2 movimientos</span></h3>
-          <div><span class="pill cr">CREDIT</span> al principal</div>
-          <div><span class="pill db">DEBIT</span> a la contrapartida</div></div>
-        <div class="card op"><h3>Retiro <span>2 movimientos</span></h3>
-          <div><span class="pill db">DEBIT</span> al principal</div>
-          <div><span class="pill cr">CREDIT</span> a la contrapartida</div></div>
+      <div class="grid3" style="margin-top:16px">
+        <div class="card op"><h3>Deposit <span>2 movements</span></h3>
+          <div><span class="pill cr">CREDIT</span> to the main side</div>
+          <div><span class="pill db">DEBIT</span> to the contra</div></div>
+        <div class="card op"><h3>Withdrawal <span>2 movements</span></h3>
+          <div><span class="pill db">DEBIT</span> to the main side</div>
+          <div><span class="pill cr">CREDIT</span> to the contra</div></div>
+        <div class="card op"><h3>Reversal <span>2 or 4 movements</span></h3>
+          <div><span class="pill cr">CREDIT</span> where the original debited</div>
+          <div><span class="pill db">DEBIT</span> where the original credited</div></div>
       </div>
+      <p class="intro" style="margin-top:16px">A reversal never edits or deletes the original: it is a new transaction with the same movements and the opposite entry type, so it balances on its own and every account still ends with main + contra = 0. It is rejected if it would leave a main side negative.</p>
 
       <ul class="card inv">
-        <li><span class="n">1</span><span><b>Balance de la transacción:</b> la suma de débitos es igual a la suma de créditos.</span></li>
-        <li><span class="n">2</span><span><b>Balance por cuenta:</b> en cada cuenta, principal + contrapartida = 0.</span></li>
-        <li><span class="n">3</span><span><b>Sin saldos negativos:</b> los retiros y transferencias sin fondos se rechazan.</span></li>
-        <li><span class="n">4</span><span><b>Montos positivos:</b> la dirección la da la naturaleza, débito o crédito.</span></li>
-        <li><span class="n">5</span><span><b>Transferencias:</b> el origen y el destino son cuentas distintas.</span></li>
+        <li><span class="n">1</span><span><b>Transaction balance:</b> the sum of debits equals the sum of credits.</span></li>
+        <li><span class="n">2</span><span><b>Per-account balance:</b> in each account, main + contra = 0.</span></li>
+        <li><span class="n">3</span><span><b>No negative balances:</b> withdrawals and transfers without funds are rejected.</span></li>
+        <li><span class="n">4</span><span><b>Positive amounts:</b> the direction is given by the entry type, debit or credit.</span></li>
+        <li><span class="n">5</span><span><b>Transfers:</b> source and destination are different accounts.</span></li>
       </ul>
     </div>
   </section>
 
-  <section id="arquitectura">
+  <section id="architecture">
     <div class="wrap">
-      <div class="eyebrow">ARQUITECTURA</div>
-      <h2>El viaje de un <em>fondeo</em></h2>
-      <p class="intro">El código se organiza por módulos de negocio, <code>user</code> y <code>account</code>, y las dependencias apuntan hacia el dominio. Esto es lo que pasa en <code>POST /account/{id}/deposit</code>:</p>
+      <div class="eyebrow">ARCHITECTURE</div>
+      <h2>The journey of a <em>deposit</em></h2>
+      <p class="intro">The code is organized by business module, <code>user</code> and <code>account</code>, and dependencies point toward the domain. This is what happens on <code>POST /account/{id}/deposit</code>:</p>
 
       <div class="steps">
-        <div class="st"><div class="n">1</div><div><h3 class="mono">@authenticated <small>JWT</small></h3><p>Valida el token y consulta al usuario <b>en cada solicitud</b>: una desactivación surte efecto de inmediato.</p></div></div>
-        <div class="st"><div class="n">2</div><div><h3 class="mono">routes.py <small>RUTA</small></h3><p>Lee el JSON y revisa los campos obligatorios. <b>Sin reglas de negocio.</b></p></div></div>
-        <div class="st"><div class="n">3</div><div><h3 class="mono">SELECT … FOR UPDATE <small>BLOQUEO</small></h3><p>Bloquea la cuenta <b>antes</b> de calcular el saldo: dos operaciones simultáneas no gastan el mismo dinero.</p></div></div>
-        <div class="st"><div class="n">4</div><div><h3 class="mono">authorize(action, scope) <small>RBAC</small></h3><p><b>Permisos, nunca roles:</b> DEPOSIT sobre cuentas propias, de clientes o del banco.</p></div></div>
-        <div class="st"><div class="n">5</div><div><h3 class="mono">Transaction.validate() <small>DOMINIO</small></h3><p>Arma los movimientos y aplica las <b>5 invariantes</b> antes de persistir.</p></div></div>
-        <div class="st"><div class="n">6</div><div><h3 class="mono">COMMIT <small>POSTGRESQL</small></h3><p>Transacción y movimientos en <b>un solo commit</b>, que libera el bloqueo.</p></div></div>
+        <div class="st"><div class="n">1</div><div><h3 class="mono">@authenticated <small>JWT</small></h3><p>Validates the token and looks up the user <b>on every request</b>: a deactivation takes effect immediately.</p></div></div>
+        <div class="st"><div class="n">2</div><div><h3 class="mono">routes.py <small>ROUTE</small></h3><p>Reads the JSON and checks the required fields. <b>No business rules.</b></p></div></div>
+        <div class="st"><div class="n">3</div><div><h3 class="mono">SELECT … FOR UPDATE <small>LOCK</small></h3><p>Locks the account <b>before</b> computing the balance: two concurrent operations cannot spend the same money.</p></div></div>
+        <div class="st"><div class="n">4</div><div><h3 class="mono">authorize(action, scope) <small>RBAC</small></h3><p><b>Permissions, never roles:</b> DEPOSIT on own, client or bank accounts.</p></div></div>
+        <div class="st"><div class="n">5</div><div><h3 class="mono">Transaction.validate() <small>DOMAIN</small></h3><p>Builds the movements and applies the <b>5 invariants</b> before persisting.</p></div></div>
+        <div class="st"><div class="n">6</div><div><h3 class="mono">COMMIT <small>POSTGRESQL</small></h3><p>Transaction and movements in <b>a single commit</b>, which releases the lock.</p></div></div>
       </div>
 
       <div class="grid3">
-        <div class="card feat"><h3>Sin float</h3><p><code>Decimal</code> en Python y <code>NUMERIC(18,2)</code> en la base. La API devuelve los montos como texto con 2 decimales.</p></div>
-        <div class="card feat"><h3>Sin deadlocks</h3><p>Una transferencia bloquea ambas cuentas siempre en el mismo orden, por <code>id</code>.</p></div>
-        <div class="card feat"><h3>Un servicio por operación</h3><p>No uno por rol: el mismo <code>AccountFunder</code> atiende al cliente y al admin. La diferencia la resuelve el alcance de la cuenta.</p></div>
+        <div class="card feat"><h3>No float</h3><p><code>Decimal</code> in Python and <code>NUMERIC(18,2)</code> in the database. The API returns amounts as text with 2 decimals.</p></div>
+        <div class="card feat"><h3>No deadlocks</h3><p>A transfer always locks both accounts in the same order, by <code>id</code>.</p></div>
+        <div class="card feat"><h3>One service per operation</h3><p>Not one per role: the same <code>AccountFunder</code> serves the client and the admin. The difference is resolved by the account's scope.</p></div>
       </div>
     </div>
   </section>
 
-  <section id="permisos">
+  <section id="permissions">
     <div class="wrap">
-      <div class="eyebrow">ROLES Y PERMISOS</div>
-      <h2>Un permiso es el par <em>(acción, alcance)</em></h2>
-      <p class="intro">Los alcances son <code>OWN</code> (las cuentas del usuario autenticado), <code>VOSTRO</code> (cualquier cuenta de cliente) y <code>NOSTRO</code> (las cuentas del banco). En una transferencia el permiso se evalúa solo sobre la cuenta origen.</p>
+      <div class="eyebrow">ROLES AND PERMISSIONS</div>
+      <h2>A permission is the pair <em>(action, scope)</em></h2>
+      <p class="intro">The scopes are <code>OWN</code> (the authenticated user's accounts), <code>VOSTRO</code> (any client account) and <code>NOSTRO</code> (the bank's accounts). In a transfer the permission is evaluated only on the source account.</p>
       <div class="card tbl fit">
         <table>
-          <tr><th>PERMISO</th><th class="c">CLIENT</th><th class="c">OPERATOR</th><th class="c">ADMIN</th></tr>
-          <tr><td><code>VIEW</code>, <code>DEPOSIT</code>, <code>WITHDRAW</code>, <code>TRANSFER</code> sobre <code>OWN</code></td><td class="c ok">✓</td><td></td><td></td></tr>
-          <tr><td><code>VIEW</code> sobre <code>VOSTRO</code></td><td></td><td class="c ok">✓</td><td class="c ok">✓</td></tr>
-          <tr><td><code>DEPOSIT</code>, <code>WITHDRAW</code>, <code>TRANSFER</code> sobre <code>VOSTRO</code></td><td></td><td></td><td class="c ok">✓</td></tr>
-          <tr><td><code>OPEN_ACCOUNT</code> sobre <code>VOSTRO</code></td><td></td><td class="c ok">✓</td><td class="c ok">✓</td></tr>
-          <tr><td><code>VIEW</code>, <code>DEPOSIT</code>, <code>WITHDRAW</code>, <code>TRANSFER</code> sobre <code>NOSTRO</code></td><td></td><td class="c ok">✓</td><td class="c ok">✓</td></tr>
-          <tr><td><code>OPEN_ACCOUNT</code> sobre <code>NOSTRO</code></td><td></td><td class="c ok">✓</td><td class="c ok">✓</td></tr>
+          <tr><th>PERMISSION</th><th class="c">CLIENT</th><th class="c">OPERATOR</th><th class="c">ADMIN</th></tr>
+          <tr><td><code>VIEW</code>, <code>DEPOSIT</code>, <code>WITHDRAW</code>, <code>TRANSFER</code> on <code>OWN</code></td><td class="c ok">✓</td><td></td><td></td></tr>
+          <tr><td><code>VIEW</code> on <code>VOSTRO</code></td><td></td><td class="c ok">✓</td><td class="c ok">✓</td></tr>
+          <tr><td><code>DEPOSIT</code>, <code>WITHDRAW</code>, <code>TRANSFER</code> on <code>VOSTRO</code></td><td></td><td></td><td class="c ok">✓</td></tr>
+          <tr><td><code>OPEN_ACCOUNT</code> on <code>VOSTRO</code></td><td></td><td class="c ok">✓</td><td class="c ok">✓</td></tr>
+          <tr><td><code>VIEW</code>, <code>DEPOSIT</code>, <code>WITHDRAW</code>, <code>TRANSFER</code> on <code>NOSTRO</code></td><td></td><td class="c ok">✓</td><td class="c ok">✓</td></tr>
+          <tr><td><code>OPEN_ACCOUNT</code> on <code>NOSTRO</code></td><td></td><td class="c ok">✓</td><td class="c ok">✓</td></tr>
+          <tr><td><code>REVERSE</code> on <code>VOSTRO</code> and <code>NOSTRO</code></td><td></td><td></td><td class="c ok">✓</td></tr>
           <tr><td><code>MANAGE_USERS</code></td><td></td><td></td><td class="c ok">✓</td></tr>
         </table>
       </div>
@@ -330,50 +336,52 @@
   <section id="api">
     <div class="wrap">
       <div class="eyebrow">API</div>
-      <h2>13 endpoints, todos en JSON</h2>
-      <p class="intro">Salvo el login, todas las rutas requieren <code>Authorization: Bearer &lt;token&gt;</code>. Los errores salen como <code>{"error": "..."}</code> con 400, 401 o 403.</p>
+      <h2>15 endpoints, all JSON</h2>
+      <p class="intro">Except for login, every route requires <code>Authorization: Bearer &lt;token&gt;</code>. Errors come out as <code>{"error": "..."}</code> with 400, 401 or 403.</p>
       <div class="card tbl">
         <table>
-          <tr><th>MÉTODO</th><th>RUTA</th><th>QUÉ HACE</th><th>PERMISO</th></tr>
-          <tr><td><span class="m post">POST</span></td><td><code>/user/login</code></td><td>Inicia sesión</td><td>Sin token</td></tr>
-          <tr><td><span class="m get">GET</span></td><td><code>/user/</code></td><td>Perfil del usuario autenticado</td><td>Cualquier usuario</td></tr>
-          <tr><td><span class="m post">POST</span></td><td><code>/user/password</code></td><td>Cambia la contraseña</td><td>Cualquier usuario</td></tr>
-          <tr><td><span class="m post">POST</span></td><td><code>/user/admin</code></td><td>Alta de administrador</td><td><code>MANAGE_USERS</code></td></tr>
-          <tr><td><span class="m post">POST</span></td><td><code>/user/operator</code></td><td>Alta de operador</td><td><code>MANAGE_USERS</code></td></tr>
-          <tr><td><span class="m get">GET</span></td><td><code>/account/</code></td><td>Todas las cuentas con su titular y su saldo actual</td><td><code>VIEW:VOSTRO</code> y <code>VIEW:NOSTRO</code></td></tr>
-          <tr><td><span class="m post">POST</span></td><td><code>/account/client</code></td><td>Alta de cliente con su primera cuenta VOSTRO</td><td><code>OPEN_ACCOUNT:VOSTRO</code></td></tr>
-          <tr><td><span class="m post">POST</span></td><td><code>/account/vostro</code></td><td>Cuenta VOSTRO adicional para un cliente</td><td><code>OPEN_ACCOUNT:VOSTRO</code></td></tr>
-          <tr><td><span class="m post">POST</span></td><td><code>/account/nostro</code></td><td>Cuenta propia del banco</td><td><code>OPEN_ACCOUNT:NOSTRO</code></td></tr>
-          <tr><td><span class="m post">POST</span></td><td><code>/account/{id}/deposit</code></td><td>Fondeo</td><td><code>DEPOSIT</code> sobre el alcance de la cuenta</td></tr>
-          <tr><td><span class="m post">POST</span></td><td><code>/account/{id}/withdrawal</code></td><td>Retiro</td><td><code>WITHDRAW</code> sobre el alcance de la cuenta</td></tr>
-          <tr><td><span class="m post">POST</span></td><td><code>/account/{id}/transfer</code></td><td>Transferencia; la cuenta de la ruta es el origen</td><td><code>TRANSFER</code> sobre el alcance del origen</td></tr>
-          <tr><td><span class="m get">GET</span></td><td><code>/account/{id}/balance</code></td><td>Historial de movimientos con el saldo tras cada uno</td><td><code>VIEW</code> sobre el alcance de la cuenta</td></tr>
+          <tr><th>METHOD</th><th>ROUTE</th><th>WHAT IT DOES</th><th>PERMISSION</th></tr>
+          <tr><td><span class="m post">POST</span></td><td><code>/user/login</code></td><td>Logs in</td><td>No token</td></tr>
+          <tr><td><span class="m get">GET</span></td><td><code>/user/</code></td><td>Authenticated user's profile</td><td>Any user</td></tr>
+          <tr><td><span class="m post">POST</span></td><td><code>/user/password</code></td><td>Changes the password</td><td>Any user</td></tr>
+          <tr><td><span class="m post">POST</span></td><td><code>/user/admin</code></td><td>Admin signup</td><td><code>MANAGE_USERS</code></td></tr>
+          <tr><td><span class="m post">POST</span></td><td><code>/user/operator</code></td><td>Operator signup</td><td><code>MANAGE_USERS</code></td></tr>
+          <tr><td><span class="m post">POST</span></td><td><code>/user/deactivate</code></td><td>Deactivates a user</td><td><code>MANAGE_USERS</code></td></tr>
+          <tr><td><span class="m get">GET</span></td><td><code>/account/</code></td><td>Every account with its holder and current balance</td><td><code>VIEW:VOSTRO</code> and <code>VIEW:NOSTRO</code></td></tr>
+          <tr><td><span class="m post">POST</span></td><td><code>/account/client</code></td><td>Client signup with their first VOSTRO account</td><td><code>OPEN_ACCOUNT:VOSTRO</code></td></tr>
+          <tr><td><span class="m post">POST</span></td><td><code>/account/vostro</code></td><td>Additional VOSTRO account for a client</td><td><code>OPEN_ACCOUNT:VOSTRO</code></td></tr>
+          <tr><td><span class="m post">POST</span></td><td><code>/account/nostro</code></td><td>The bank's own account</td><td><code>OPEN_ACCOUNT:NOSTRO</code></td></tr>
+          <tr><td><span class="m post">POST</span></td><td><code>/account/{id}/deposit</code></td><td>Deposit</td><td><code>DEPOSIT</code> on the account's scope</td></tr>
+          <tr><td><span class="m post">POST</span></td><td><code>/account/{id}/withdrawal</code></td><td>Withdrawal</td><td><code>WITHDRAW</code> on the account's scope</td></tr>
+          <tr><td><span class="m post">POST</span></td><td><code>/account/{id}/transfer</code></td><td>Transfer; the account in the path is the source</td><td><code>TRANSFER</code> on the source's scope</td></tr>
+          <tr><td><span class="m get">GET</span></td><td><code>/account/{id}/balance</code></td><td>Movement history with the balance after each one</td><td><code>VIEW</code> on the account's scope</td></tr>
+          <tr><td><span class="m post">POST</span></td><td><code>/account/transaction/{id}/reversal</code></td><td>Reverses a transaction with the opposite movements</td><td><code>REVERSE</code> on the scope of each account</td></tr>
         </table>
       </div>
     </div>
   </section>
 
-  <section id="empezar">
+  <section id="start">
     <div class="wrap">
-      <div class="eyebrow">PUESTA EN MARCHA</div>
-      <h2>Cinco pasos para levantarlo</h2>
-      <p class="intro">Se necesita Python, Docker y PostgreSQL 15 o superior; el contenedor del proyecto usa PostgreSQL 17.</p>
-<pre class="card"><span class="c"># 1. Variables de entorno</span>
-cp .env.example .env            <span class="c"># y ajustar los valores</span>
+      <div class="eyebrow">GETTING STARTED</div>
+      <h2>Five steps to run it</h2>
+      <p class="intro">You need Python, Docker and PostgreSQL 15 or later; the project's container uses PostgreSQL 17.</p>
+<pre class="card"><span class="c"># 1. Environment variables</span>
+cp .env.example .env            <span class="c"># and adjust the values</span>
 
-<span class="c"># 2. Dependencias</span>
+<span class="c"># 2. Dependencies</span>
 python -m venv venv
 venv/bin/pip install -r requirements.txt
 
-<span class="c"># 3. Base de datos</span>
+<span class="c"># 3. Database</span>
 docker compose up -d
 
-<span class="c"># 4. Esquema, roles, permisos y primer admin</span>
+<span class="c"># 4. Schema, roles, permissions and first admin</span>
 venv/bin/python create_admin.py
 
-<span class="c"># 5. Servidor de desarrollo en http://localhost:8080</span>
+<span class="c"># 5. Development server at http://localhost:8080</span>
 venv/bin/python app.py</pre>
-      <div class="warn"><b>create_admin.py es destructivo:</b> borra y recrea todas las tablas y la vista <code>account_history</code>. Hoy es la única forma de crear el esquema, porque todavía no hay migraciones.</div>
+      <div class="warn"><b>create_admin.py is destructive:</b> it drops and recreates every table and the <code>account_history</code> view. Today it is the only way to create the schema, because there are no migrations yet.</div>
       <div class="chips">
         <span class="chip">Python</span><span class="chip">Flask 3.1</span><span class="chip">SQLAlchemy 2.1</span><span class="chip">PostgreSQL 17</span>
         <span class="chip">psycopg 3</span><span class="chip">PyJWT + bcrypt</span><span class="chip">dependency-injector</span><span class="chip">Docker</span>
@@ -381,18 +389,15 @@ venv/bin/python app.py</pre>
     </div>
   </section>
 
-  <section id="pendientes">
+  <section id="pending">
     <div class="wrap">
-      <div class="eyebrow">PENDIENTES</div>
-      <h2>Lo que todavía no hace</h2>
-      <p class="intro">Siguen abiertos en la especificación y no están implementados.</p>
+      <div class="eyebrow">PENDING</div>
+      <h2>What it does not do yet</h2>
+      <p class="intro">Still open in the specification and not implemented.</p>
       <ul class="card todo">
-        <li>Reversos de transacciones.</li>
-        <li>Idempotencia de operaciones, con una clave por solicitud.</li>
-        <li>Migraciones del esquema.</li>
-        <li>Pruebas automatizadas.</li>
-        <li>Servicios para desactivar usuarios o cambiarles el rol.</li>
-        <li>Paginación del historial de movimientos.</li>
+        <li>Operation idempotency, with a key per request.</li>
+        <li>Schema migrations.</li>
+        <li>Automated tests.</li>
       </ul>
     </div>
   </section>
@@ -400,7 +405,7 @@ venv/bin/python app.py</pre>
 
 <footer>
   <div class="wrap">
-    <span><b>Core bancario</b> · partida doble, solo MXN</span>
+    <span><b>Banking core</b> · double entry, MXN only</span>
     <span>Flask · SQLAlchemy · PostgreSQL</span>
   </div>
 </footer>

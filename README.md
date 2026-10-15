@@ -1,168 +1,168 @@
-# Core bancario
+# Banking core
 
-Core bancario mínimo que registra cuentas y movimientos de dinero bajo la **ley de partida doble**, solo en pesos mexicanos (MXN). Ningún saldo se guarda ni se modifica directamente: todo cambio ocurre mediante movimientos balanceados, y el saldo de una cuenta se calcula a partir de ellos.
+A minimal banking core that records accounts and money movements under the **double-entry bookkeeping rule**, in Mexican pesos (MXN) only. No balance is stored or modified directly: every change happens through balanced movements, and an account's balance is computed from them.
 
-La especificación completa, en inglés, está en [`banking-core-specification.md`](banking-core-specification.md). Las referencias `§N` de este documento apuntan a sus secciones.
+The full specification is in [`banking-core-specification.md`](banking-core-specification.md). The `§N` references in this document point to its sections.
 
-## Contenido
+## Contents
 
-- [Funcionalidades](#funcionalidades)
+- [Features](#features)
 - [Stack](#stack)
-- [Puesta en marcha](#puesta-en-marcha)
-- [Arquitectura](#arquitectura)
-- [Modelo contable](#modelo-contable)
-- [Usuarios, roles y permisos](#usuarios-roles-y-permisos)
+- [Getting started](#getting-started)
+- [Architecture](#architecture)
+- [Accounting model](#accounting-model)
+- [Users, roles and permissions](#users-roles-and-permissions)
 - [Endpoints](#endpoints)
-- [Servicios de aplicación](#servicios-de-aplicación)
-- [Modelo de datos](#modelo-de-datos)
-- [Concurrencia](#concurrencia)
-- [Ejemplo de punta a punta](#ejemplo-de-punta-a-punta)
-- [Pendientes](#pendientes)
-- [Licencia](#licencia)
+- [Application services](#application-services)
+- [Data model](#data-model)
+- [Concurrency](#concurrency)
+- [End-to-end example](#end-to-end-example)
+- [Pending](#pending)
+- [License](#license)
 
-## Funcionalidades
+## Features
 
-- **Usuarios y acceso:** login con JWT, cambio de contraseña obligatorio en el primer ingreso, perfil del usuario autenticado, alta de administradores y operadores, y desactivación de usuarios.
-- **Control de acceso por permisos (RBAC):** tres roles fijos (`CLIENT`, `OPERATOR`, `ADMIN`), cada uno con permisos de la forma *(acción, alcance)*.
-- **Apertura de cuentas:** alta de cliente con su primera cuenta, cuentas adicionales para un cliente existente y cuentas propias del banco.
-- **Operaciones:** fondeo, retiro y transferencia entre cuentas del mismo banco, cada una como una transacción atómica de partida doble.
-- **Reversos:** un admin deshace un fondeo, un retiro o una transferencia con una transacción nueva que referencia a la original.
-- **Consulta de saldo e historial:** lista de movimientos de una cuenta con el saldo que dejó cada uno, calculado en SQL por una vista.
-- **Invariantes contables:** validadas en el dominio antes de persistir cualquier transacción.
-- **Concurrencia segura:** bloqueo de filas para que dos operaciones simultáneas no gasten el mismo saldo.
+- **Users and access:** JWT login, mandatory password change on first login, authenticated user's profile, admin and operator signup, and user deactivation.
+- **Permission-based access control (RBAC):** three fixed roles (`CLIENT`, `OPERATOR`, `ADMIN`), each with permissions of the form *(action, scope)*.
+- **Account opening:** client signup with their first account, additional accounts for an existing client, and the bank's own accounts.
+- **Operations:** deposit, withdrawal and transfer between accounts of the same bank, each as an atomic double-entry transaction.
+- **Reversals:** an admin undoes a deposit, a withdrawal or a transfer with a new transaction that references the original.
+- **Balance and history inquiry:** an account's list of movements with the balance each one left, computed in SQL by a view.
+- **Accounting invariants:** validated in the domain before persisting any transaction.
+- **Safe concurrency:** row locking so two concurrent operations cannot spend the same balance.
 
 ## Stack
 
-| Componente | Tecnología |
+| Component | Technology |
 |---|---|
-| Lenguaje | Python |
-| Framework web | Flask 3.1 |
+| Language | Python |
+| Web framework | Flask 3.1 |
 | ORM | SQLAlchemy 2.1 |
-| Base de datos | PostgreSQL 17 en Docker (se requiere 15+ por `UNIQUE NULLS NOT DISTINCT`) |
+| Database | PostgreSQL 17 in Docker (15+ is required for `UNIQUE NULLS NOT DISTINCT`) |
 | Driver | psycopg 3 |
-| Autenticación | PyJWT (HS256) y bcrypt |
-| Inyección de dependencias | dependency-injector |
-| Configuración | python-dotenv |
+| Authentication | PyJWT (HS256) and bcrypt |
+| Dependency injection | dependency-injector |
+| Configuration | python-dotenv |
 
-Las versiones exactas están fijadas en `requirements.txt`.
+The exact versions are pinned in `requirements.txt`.
 
-## Puesta en marcha
+## Getting started
 
 ```bash
-# 1. Variables de entorno
-cp .env.example .env            # y ajustar los valores
+# 1. Environment variables
+cp .env.example .env            # and adjust the values
 
-# 2. Dependencias
+# 2. Dependencies
 python -m venv venv
 venv/bin/pip install -r requirements.txt
 
-# 3. Base de datos
+# 3. Database
 docker compose up -d
 
-# 4. Esquema, roles, permisos y primer admin
+# 4. Schema, roles, permissions and first admin
 venv/bin/python create_admin.py
 
-# 5. Servidor de desarrollo en http://localhost:8080 (o el puerto de PORT)
+# 5. Development server at http://localhost:8080 (or the PORT port)
 venv/bin/python app.py
 ```
 
-> **`create_admin.py` es destructivo:** borra y recrea todas las tablas y la vista `account_history`. Hoy es la única forma de crear el esquema, porque todavía no hay migraciones.
+> **`create_admin.py` is destructive:** it drops and recreates every table and the `account_history` view. Today it is the only way to create the schema, because there are no migrations yet.
 
-### Variables de entorno
+### Environment variables
 
-| Variable | Uso |
+| Variable | Use |
 |---|---|
-| `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `POSTGRES_PORT` | Contenedor de `docker-compose.yml` |
-| `DATABASE_URL` | Cadena de conexión de SQLAlchemy (`postgresql+psycopg://...`) |
-| `JWT_SECRET` | Clave de firma HS256 |
-| `JWT_EXPIRATION_MINUTES` | Duración del access token, 20 por defecto |
-| `PORT` | Puerto del servidor de desarrollo, 8080 por defecto |
-| `BANK_NAME` | Titular que se muestra en las cuentas NOSTRO |
-| `ADMIN_EMAIL`, `ADMIN_PASSWORD` | Primer admin que crea `create_admin.py` |
+| `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `POSTGRES_PORT` | `docker-compose.yml` container |
+| `DATABASE_URL` | SQLAlchemy connection string (`postgresql+psycopg://...`) |
+| `JWT_SECRET` | HS256 signing key |
+| `JWT_EXPIRATION_MINUTES` | Access token lifetime, 20 by default |
+| `PORT` | Development server port, 8080 by default |
+| `BANK_NAME` | Holder shown on NOSTRO accounts |
+| `ADMIN_EMAIL`, `ADMIN_PASSWORD` | First admin created by `create_admin.py` |
 
-`.env` no se versiona.
+`.env` is not committed.
 
-## Arquitectura
+## Architecture
 
-El código se organiza por **módulos de negocio**. Cada módulo tiene cuatro archivos, uno por responsabilidad, y las dependencias apuntan hacia el dominio:
+The code is organized by **business module**. Each module has four files, one per responsibility, and dependencies point toward the domain:
 
 ```mermaid
 flowchart LR
-  cliente(["Cliente HTTP"])
-  subgraph modulo["Módulo de negocio: user o account"]
+  client(["HTTP client"])
+  subgraph module["Business module: user or account"]
     direction LR
-    rutas["routes.py<br/>Blueprint de Flask"]
-    servicios["application_service.py<br/>Casos de uso"]
-    dominio["domain_model.py<br/>Modelos ORM y repositorio"]
+    routes["routes.py<br/>Flask blueprint"]
+    services["application_service.py<br/>Use cases"]
+    domain["domain_model.py<br/>ORM models and repository"]
     dto["dto.py<br/>Dataclasses"]
   end
-  bd[("PostgreSQL")]
+  db[("PostgreSQL")]
 
-  cliente -->|"JSON + Bearer token"| rutas
-  rutas -->|"invoke(...)"| servicios
-  servicios --> dominio
-  dominio -->|"SQLAlchemy"| bd
-  servicios -.->|"devuelve"| dto
-  dto -.->|"se serializa a JSON"| rutas
+  client -->|"JSON + Bearer token"| routes
+  routes -->|"invoke(...)"| services
+  services --> domain
+  domain -->|"SQLAlchemy"| db
+  services -.->|"returns"| dto
+  dto -.->|"serialized to JSON"| routes
 ```
 
-Los módulos se apoyan en `src/main`, que es compartido, y `account` depende de `user` (titulares, permisos y alcances); `user` no conoce a `account`. La única dependencia en sentido contrario es la de `@authenticated`, que vive en `src/main` y usa el `UserAuthenticator` de `user`:
+The modules rely on `src/main`, which is shared, and `account` depends on `user` (holders, permissions and scopes); `user` does not know about `account`. The only dependency in the opposite direction is `@authenticated`, which lives in `src/main` and uses the `UserAuthenticator` from `user`:
 
 ```mermaid
 flowchart TB
-  app["app.py<br/>crea el contenedor, lo cablea<br/>y registra los blueprints"]
-  account["src/account<br/>cuentas, transacciones,<br/>movimientos y operaciones"]
-  user["src/user<br/>usuarios, roles, permisos<br/>y autenticación"]
-  main["src/main<br/>DIContainer, @authenticated,<br/>Base, errores y utilidades"]
-  bd[("PostgreSQL")]
+  app["app.py<br/>creates the container, wires it<br/>and registers the blueprints"]
+  account["src/account<br/>accounts, transactions,<br/>movements and operations"]
+  user["src/user<br/>users, roles, permissions<br/>and authentication"]
+  main["src/main<br/>DIContainer, @authenticated,<br/>Base, errors and utilities"]
+  db[("PostgreSQL")]
 
   app -->|"blueprint /account"| account
   app -->|"blueprint /user"| user
   app -->|"DIContainer"| main
-  account -->|"titular, permisos y alcances"| user
+  account -->|"holder, permissions and scopes"| user
   account --> main
   user --> main
-  main -.->|"@authenticated usa UserAuthenticator"| user
-  account -->|"cuentas, transacciones, movimientos"| bd
-  user -->|"usuarios, roles, permisos"| bd
+  main -.->|"@authenticated uses UserAuthenticator"| user
+  account -->|"accounts, transactions, movements"| db
+  user -->|"users, roles, permissions"| db
 ```
 
 ```
-app.py                       # crea el contenedor, lo cablea y registra los blueprints
-create_admin.py              # esquema + semilla RBAC + primer admin
+app.py                       # creates the container, wires it and registers the blueprints
+create_admin.py              # schema + RBAC seed + first admin
 docker-compose.yml           # PostgreSQL
 src/
-├── main/                    # compartido por todos los módulos
-│   ├── container.py         # DIContainer: engine, sesiones, repositorios y servicios
-│   ├── database.py          # Base declarativa de SQLAlchemy
+├── main/                    # shared by every module
+│   ├── container.py         # DIContainer: engine, sessions, repositories and services
+│   ├── database.py          # SQLAlchemy declarative Base
 │   ├── errors.py            # AuthenticationError (401), PermissionDenied (403)
-│   ├── middleware.py        # decorador @authenticated
-│   ├── routes.py            # GET / y manejadores de error globales
+│   ├── middleware.py        # @authenticated decorator
+│   ├── routes.py            # GET / and global error handlers
 │   └── utils.py             # bcrypt, JWT, bearer_token(), json_body()
-├── user/                    # usuarios, roles, permisos y autenticación
+├── user/                    # users, roles, permissions and authentication
 │   ├── domain_model.py
 │   ├── dto.py
 │   ├── application_service.py
 │   └── routes.py
-└── account/                 # cuentas, transacciones, movimientos y operaciones
+└── account/                 # accounts, transactions, movements and operations
     ├── domain_model.py
     ├── dto.py
     ├── application_service.py
     └── routes.py
 ```
 
-| Archivo | Responsabilidad |
+| File | Responsibility |
 |---|---|
-| `routes.py` | Blueprint de Flask. Lee y valida la forma del cuerpo, llama a un servicio y serializa la respuesta. No contiene reglas de negocio. |
-| `application_service.py` | Casos de uso. Cada servicio es una clase con un único método `invoke(...)`: autoriza, coordina el dominio y el repositorio, y devuelve un DTO. |
-| `domain_model.py` | Enums, modelos ORM con sus reglas (movimientos, invariantes, alcance de una cuenta) y el repositorio del módulo. |
-| `dto.py` | Dataclasses que cruzan entre rutas y servicios. Ningún modelo ORM sale de un servicio. |
+| `routes.py` | Flask blueprint. Reads and validates the shape of the body, calls a service and serializes the response. Holds no business rules. |
+| `application_service.py` | Use cases. Each service is a class with a single `invoke(...)` method: it authorizes, coordinates the domain and the repository, and returns a DTO. |
+| `domain_model.py` | Enums, ORM models with their rules (movements, invariants, an account's scope) and the module's repository. |
+| `dto.py` | Dataclasses passed between routes and services. No ORM model leaves a service. |
 
-> La especificación (§3) propone una carpeta por capa dentro de cada módulo. El código usa archivos planos por módulo, con el modelo ORM y su repositorio juntos en `domain_model.py`.
+> The specification (§3) proposes one folder per layer inside each module. The code uses flat files per module, with the ORM model and its repository together in `domain_model.py`.
 
-### Inyección de dependencias
+### Dependency injection
 
-`DIContainer` (`src/main/container.py`) declara el engine como `Singleton` y las sesiones, repositorios y servicios como `Factory`. Cada repositorio recibe su propia sesión. Las rutas reciben el servicio que necesitan:
+`DIContainer` (`src/main/container.py`) declares the engine as a `Singleton` and the sessions, repositories and services as `Factory`. Each repository gets its own session. Routes receive the service they need:
 
 ```python
 @blueprint.route("/<uuid:account_id>/deposit", methods=["POST"])
@@ -176,176 +176,176 @@ def deposit(
   ...
 ```
 
-### Ciclo de una solicitud
+### Request lifecycle
 
-1. `@authenticated()` toma el token del header `Authorization`, lo valida con `UserAuthenticator` y pasa el usuario a la ruta como `actor`.
-2. La ruta lee el cuerpo con `json_body()` y revisa que estén los campos obligatorios.
-3. El servicio de aplicación exige el permiso, ejecuta el caso de uso y devuelve un DTO.
-4. La ruta convierte el DTO a JSON.
+1. `@authenticated()` takes the token from the `Authorization` header, validates it with `UserAuthenticator` and passes the user to the route as `actor`.
+2. The route reads the body with `json_body()` and checks that the required fields are present.
+3. The application service requires the permission, runs the use case and returns a DTO.
+4. The route converts the DTO to JSON.
 
-El mismo ciclo en un fondeo (`POST /account/<account_id>/deposit`):
+The same lifecycle for a deposit (`POST /account/<account_id>/deposit`):
 
 ```mermaid
 sequenceDiagram
   autonumber
-  actor Cliente
+  actor Client
   participant Auth as @authenticated
-  participant Ruta as Ruta deposit
-  participant Servicio as AccountFunder
+  participant Route as deposit route
+  participant Service as AccountFunder
   participant Repo as AccountRepository
-  participant BD as PostgreSQL
+  participant DB as PostgreSQL
 
-  Cliente->>Auth: POST /account/{id}/deposit con Bearer token
-  Auth->>BD: UserAuthenticator consulta al usuario del token
-  BD-->>Auth: usuario, rol y permisos
-  Auth->>Ruta: actor (AuthenticatedUser)
-  Ruta->>Ruta: json_body() y campos obligatorios
-  Ruta->>Servicio: invoke(actor, account_id, amount)
-  Servicio->>Servicio: parse_amount
-  Servicio->>Repo: find_by_ids_for_update
-  Repo->>BD: SELECT ... FOR UPDATE
-  BD-->>Repo: cuenta bloqueada
-  Servicio->>Servicio: authorize(actor, DEPOSIT, account)
-  Servicio->>Repo: balance
-  Repo->>BD: créditos − débitos del principal
-  Servicio->>Servicio: Transaction.deposit y validate (invariantes)
-  Servicio->>Repo: save_transaction
-  Repo->>BD: INSERT de la transacción y sus movimientos, COMMIT
-  Note over Repo,BD: el commit libera el bloqueo de la cuenta
-  Servicio-->>Ruta: OperationResult (DTO)
-  Ruta-->>Cliente: 201 con el JSON de la operación
+  Client->>Auth: POST /account/{id}/deposit with Bearer token
+  Auth->>DB: UserAuthenticator looks up the token's user
+  DB-->>Auth: user, role and permissions
+  Auth->>Route: actor (AuthenticatedUser)
+  Route->>Route: json_body() and required fields
+  Route->>Service: invoke(actor, account_id, amount)
+  Service->>Service: parse_amount
+  Service->>Repo: find_by_ids_for_update
+  Repo->>DB: SELECT ... FOR UPDATE
+  DB-->>Repo: locked account
+  Service->>Service: authorize(actor, DEPOSIT, account)
+  Service->>Repo: balance
+  Repo->>DB: main-side credits − debits
+  Service->>Service: Transaction.deposit and validate (invariants)
+  Service->>Repo: save_transaction
+  Repo->>DB: INSERT of the transaction and its movements, COMMIT
+  Note over Repo,DB: the commit releases the account lock
+  Service-->>Route: OperationResult (DTO)
+  Route-->>Client: 201 with the operation's JSON
 ```
 
-Si el token no es válido, `@authenticated` corta en el paso 2 con 401. Si falta el permiso, el servicio lanza `PermissionDenied` en el paso 11 y la respuesta es 403; un `ValueError` del servicio (monto inválido, cuenta inexistente) sale como 400. En esos casos no se guarda nada y el bloqueo se libera al cerrar la sesión.
+If the token is not valid, `@authenticated` stops at step 2 with 401. If the permission is missing, the service raises `PermissionDenied` at step 11 and the response is 403; a `ValueError` from the service (invalid amount, nonexistent account) comes out as 400. In those cases nothing is saved and the lock is released when the session closes.
 
-### Errores
+### Errors
 
-Todos los errores se devuelven como `{"error": "..."}`.
+Every error is returned as `{"error": "..."}`.
 
-| Código | Cuándo | Dónde se produce |
+| Code | When | Where it is produced |
 |---|---|---|
-| 400 | Falta un campo, monto inválido, cuenta inexistente, fondos insuficientes, alias o email repetido | La ruta valida los campos y convierte los `ValueError` de los servicios |
-| 401 | Token ausente, inválido o expirado; credenciales incorrectas | `AuthenticationError`, manejador global |
-| 403 | Falta el permiso, o el usuario aún debe cambiar su contraseña | `PermissionDenied`, manejador global |
+| 400 | Missing field, invalid amount, nonexistent account, insufficient funds, duplicate alias or email | The route validates the fields and converts the services' `ValueError` |
+| 401 | Missing, invalid or expired token; invalid credentials | `AuthenticationError`, global handler |
+| 403 | Missing permission, or the user still has to change their password | `PermissionDenied`, global handler |
 
-## Modelo contable
+## Accounting model
 
-### Cuentas
+### Accounts
 
-Existe **un solo tipo de cuenta**, con las mismas reglas para todas. Solo las distingue una etiqueta:
+There is **a single account type**, with the same rules for all. They differ only by a label:
 
-| Clase | Qué es | Titular |
+| Class | What it is | Holder |
 |---|---|---|
-| `VOSTRO` | Cuenta de un cliente | El usuario cliente |
-| `NOSTRO` | Cuenta propia del banco | El banco (`BANK_NAME`), sin usuario titular |
+| `VOSTRO` | A client's account | The client user |
+| `NOSTRO` | The bank's own account | The bank (`BANK_NAME`), with no holder user |
 
-Toda cuenta lleva un `alias` obligatorio, único por titular. Como las NOSTRO comparten titular, el alias también es único entre ellas.
+Every account carries a required `alias`, unique per holder. Since NOSTRO accounts share a holder, the alias is also unique among them.
 
-### Principal y contrapartida
+### Main side and contra
 
-Cada cuenta tiene dos lados en el libro: el **principal**, que es el saldo que ve el titular, y la **contrapartida**, que representa el exterior de la cuenta. La contrapartida no es otra fila en `accounts`: es el lado `CONTRA` de los movimientos de esa misma cuenta, y su saldo siempre es el opuesto del principal.
+Each account has two sides in the ledger: the **main** side, which is the balance the holder sees, and the **contra**, which represents the outside of the account. The contra is not another row in `accounts`: it is the `CONTRA` side of that same account's movements, and its balance is always the opposite of the main side's.
 
 ```
-saldo = créditos − débitos del lado MAIN
+balance = credits − debits on the MAIN side
 ```
 
-El principal es de **naturaleza acreedora**: un crédito lo aumenta y un débito lo disminuye. La contrapartida es la deudora. Por eso un fondeo aparece en el historial de la cuenta como `CREDIT` y un retiro como `DEBIT`.
+The main side has a **credit nature**: a credit increases it and a debit decreases it. The contra has the debit nature. That is why a deposit shows up in the account's history as `CREDIT` and a withdrawal as `DEBIT`.
 
-### Operaciones
+### Operations
 
-Cada operación es una transacción atómica: se registran todos sus movimientos o ninguno.
+Each operation is an atomic transaction: either all of its movements are recorded or none are.
 
-| Operación | Débito | Crédito | Movimientos |
+| Operation | Debit | Credit | Movements |
 |---|---|---|---|
-| **Fondeo** a A | Contrapartida A | Principal A | 2 |
-| **Retiro** de A | Principal A | Contrapartida A | 2 |
-| **Transferencia** A → B | Principal A | Contrapartida A | 4 |
-| | Contrapartida B | Principal B | |
+| **Deposit** to A | Contra A | Main A | 2 |
+| **Withdrawal** from A | Main A | Contra A | 2 |
+| **Transfer** A → B | Main A | Contra A | 4 |
+| | Contra B | Main B | |
 
-Un retiro y una transferencia saliente dejan movimientos idénticos en el libro de la cuenta; los distingue el `type` de la transacción (`DEPOSIT`, `WITHDRAWAL`, `TRANSFER`).
+A withdrawal and an outgoing transfer leave identical movements in the account's ledger; they are told apart by the transaction's `type` (`DEPOSIT`, `WITHDRAWAL`, `TRANSFER`).
 
-Un reverso deshace una transacción con otra de tipo `REVERSAL`, que repite sus movimientos con la naturaleza opuesta y referencia a la original. La original no se toca.
+A reversal undoes a transaction with another one of type `REVERSAL`, which repeats its movements with the opposite entry type and references the original. The original is not touched.
 
-Los movimientos son **inmutables**: nunca se editan ni se borran. Su monto siempre es positivo; la dirección la da la naturaleza (`DEBIT` o `CREDIT`).
+Movements are **immutable**: they are never edited or deleted. Their amount is always positive; the direction is given by the entry type (`DEBIT` or `CREDIT`).
 
-### Invariantes
+### Invariants
 
-`Transaction.validate(balances)` las aplica antes de guardar cualquier transacción (§6):
+`Transaction.validate(balances)` applies them before saving any transaction (§6):
 
-1. **Balance de la transacción:** la suma de débitos es igual a la suma de créditos.
-2. **Balance por cuenta:** en cada cuenta, principal + contrapartida = 0.
-3. **Sin saldos negativos:** ningún principal queda negativo. Los retiros y transferencias sin fondos se rechazan.
-4. **Montos positivos:** todo movimiento tiene monto mayor que cero.
-5. **Transferencias:** el origen y el destino son cuentas distintas.
+1. **Transaction balance:** the sum of debits equals the sum of credits.
+2. **Per-account balance:** in each account, main + contra = 0.
+3. **No negative balances:** no main side ends up negative. Withdrawals and transfers without funds are rejected.
+4. **Positive amounts:** every movement has an amount greater than zero.
+5. **Transfers:** source and destination are different accounts.
 
-### Montos
+### Amounts
 
-Se manejan con `Decimal` en el código y `NUMERIC(18,2)` en la base, nunca con `float`. La API los acepta como texto o número JSON, mayores que cero y con máximo 2 decimales, y los devuelve siempre como texto con 2 decimales (`"100.50"`).
+They are handled with `Decimal` in the code and `NUMERIC(18,2)` in the database, never with `float`. The API accepts them as text or as a JSON number, greater than zero and with at most 2 decimals, and always returns them as text with 2 decimals (`"100.50"`).
 
-## Usuarios, roles y permisos
+## Users, roles and permissions
 
-### Autenticación
+### Authentication
 
-- JWT HS256 con un solo access token, sin refresh ni lista de revocación. Claims: `sub` (id del usuario), `role`, `iat`, `exp`.
-- Se envía como `Authorization: Bearer <token>`.
-- El usuario se consulta en cada solicitud, así que una desactivación o un cambio de rol surten efecto de inmediato, sin esperar a que expire el token.
-- Las contraseñas se guardan con bcrypt y admiten como máximo 72 bytes.
-- Todo usuario nuevo nace con `must_change_password: true`. Mientras siga así, solo puede consultar su perfil y cambiar su contraseña; el resto de las rutas responde 403.
-- El login devuelve el mismo error en todos los fallos, para no revelar qué emails existen.
+- HS256 JWT with a single access token, no refresh and no revocation list. Claims: `sub` (user id), `role`, `iat`, `exp`.
+- Sent as `Authorization: Bearer <token>`.
+- The user is looked up on every request, so a deactivation or a role change takes effect immediately, without waiting for the token to expire.
+- Passwords are stored with bcrypt and allow at most 72 bytes.
+- Every new user starts with `must_change_password: true`. While it stays that way, they can only read their profile and change their password; every other route responds 403.
+- Login returns the same error on every failure, so as not to reveal which emails exist.
 
-### Autorización
+### Authorization
 
-La autorización se hace **por permisos, nunca por rol**. Un permiso es el par *(acción, alcance)*:
+Authorization is done **by permission, never by role**. A permission is the pair *(action, scope)*:
 
-| Acciones (`Action`) | `VIEW`, `DEPOSIT`, `WITHDRAW`, `TRANSFER`, `OPEN_ACCOUNT`, `REVERSE`, `MANAGE_USERS` |
+| Actions (`Action`) | `VIEW`, `DEPOSIT`, `WITHDRAW`, `TRANSFER`, `OPEN_ACCOUNT`, `REVERSE`, `MANAGE_USERS` |
 |---|---|
-| **Alcances** (`Scope`) | `OWN` (cuentas del usuario autenticado), `VOSTRO` (cualquier cuenta de cliente), `NOSTRO` (cuentas del banco) |
+| **Scopes** (`Scope`) | `OWN` (the authenticated user's accounts), `VOSTRO` (any client account), `NOSTRO` (the bank's accounts) |
 
-`MANAGE_USERS` no lleva alcance.
+`MANAGE_USERS` has no scope.
 
-Para operar una cuenta, el servicio calcula el alcance de esa cuenta frente al usuario (`Account.scope_for`) y exige el permiso correspondiente:
+To operate an account, the service computes that account's scope relative to the user (`Account.scope_for`) and requires the matching permission:
 
-| Cuenta | Alcance |
+| Account | Scope |
 |---|---|
 | NOSTRO | `NOSTRO` |
-| VOSTRO cuyo titular es el usuario autenticado | `OWN` |
-| VOSTRO de otro titular | `VOSTRO` |
+| VOSTRO held by the authenticated user | `OWN` |
+| VOSTRO of another holder | `VOSTRO` |
 
 ### Roles
 
-Los roles y sus permisos son una semilla fija que crea `create_admin.py`:
+Roles and their permissions are a fixed seed created by `create_admin.py`:
 
-| Permiso | Cliente | Operador | Admin |
+| Permission | Client | Operator | Admin |
 |---|:-:|:-:|:-:|
-| `VIEW`, `DEPOSIT`, `WITHDRAW`, `TRANSFER` sobre `OWN` | ✓ | | |
-| `VIEW` sobre `VOSTRO` | | ✓ | ✓ |
-| `DEPOSIT`, `WITHDRAW`, `TRANSFER` sobre `VOSTRO` | | | ✓ |
-| `OPEN_ACCOUNT` sobre `VOSTRO` | | ✓ | ✓ |
-| `VIEW`, `DEPOSIT`, `WITHDRAW`, `TRANSFER` sobre `NOSTRO` | | ✓ | ✓ |
-| `OPEN_ACCOUNT` sobre `NOSTRO` | | ✓ | ✓ |
-| `REVERSE` sobre `VOSTRO` y `NOSTRO` | | | ✓ |
+| `VIEW`, `DEPOSIT`, `WITHDRAW`, `TRANSFER` on `OWN` | ✓ | | |
+| `VIEW` on `VOSTRO` | | ✓ | ✓ |
+| `DEPOSIT`, `WITHDRAW`, `TRANSFER` on `VOSTRO` | | | ✓ |
+| `OPEN_ACCOUNT` on `VOSTRO` | | ✓ | ✓ |
+| `VIEW`, `DEPOSIT`, `WITHDRAW`, `TRANSFER` on `NOSTRO` | | ✓ | ✓ |
+| `OPEN_ACCOUNT` on `NOSTRO` | | ✓ | ✓ |
+| `REVERSE` on `VOSTRO` and `NOSTRO` | | | ✓ |
 | `MANAGE_USERS` | | | ✓ |
 
-En una transferencia el permiso se evalúa solo sobre la cuenta **origen**; el destino solo debe existir. Por eso el operador puede acreditar una cuenta de cliente transfiriendo desde una NOSTRO, aunque no pueda fondearla ni retirar de ella.
+In a transfer the permission is evaluated only on the **source** account; the destination only has to exist. That is why the operator can credit a client account by transferring from a NOSTRO one, even though they cannot deposit to it or withdraw from it.
 
 ## Endpoints
 
-Todas las rutas reciben y devuelven JSON. Salvo las marcadas, requieren `Authorization: Bearer <token>`.
+Every route receives and returns JSON. Except where marked, they require `Authorization: Bearer <token>`.
 
-### Usuarios
+### Users
 
-| Método | Ruta | Qué hace | Permiso |
+| Method | Route | What it does | Permission |
 |---|---|---|---|
-| POST | `/user/login` | Inicia sesión | Sin token |
-| GET | `/user/` | Perfil del usuario autenticado | Cualquier usuario¹ |
-| POST | `/user/password` | Cambia la contraseña | Cualquier usuario¹ |
-| POST | `/user/admin` | Alta de administrador (§8.1) | `MANAGE_USERS` |
-| POST | `/user/operator` | Alta de operador (§8.2) | `MANAGE_USERS` |
-| POST | `/user/deactivate` | Desactiva a un usuario (§8.14) | `MANAGE_USERS` |
+| POST | `/user/login` | Logs in | No token |
+| GET | `/user/` | Authenticated user's profile | Any user¹ |
+| POST | `/user/password` | Changes the password | Any user¹ |
+| POST | `/user/admin` | Admin signup (§8.1) | `MANAGE_USERS` |
+| POST | `/user/operator` | Operator signup (§8.2) | `MANAGE_USERS` |
+| POST | `/user/deactivate` | Deactivates a user (§8.14) | `MANAGE_USERS` |
 
-¹ Disponibles aunque el usuario tenga pendiente el cambio de contraseña.
+¹ Available even while the user has a pending password change.
 
-| Ruta | Cuerpo | Respuesta |
+| Route | Body | Response |
 |---|---|---|
 | `POST /user/login` | `email`, `password` | 200: `token`, `must_change_password` |
 | `GET /user/` | — | 200: `id`, `email`, `name`, `role`, `active`, `must_change_password`, `created_at` |
@@ -353,45 +353,45 @@ Todas las rutas reciben y devuelven JSON. Salvo las marcadas, requieren `Authori
 | `POST /user/admin`, `/user/operator` | `email`, `password` | 201: `id`, `email`, `role`, `active`, `must_change_password` |
 | `POST /user/deactivate` | `email` | 200: `id`, `email`, `role`, `active: false`, `must_change_password` |
 
-### Cuentas
+### Accounts
 
-| Método | Ruta | Qué hace | Permiso |
+| Method | Route | What it does | Permission |
 |---|---|---|---|
-| GET | `/account/` | Lista de todas las cuentas, NOSTRO y VOSTRO, con su titular y su saldo actual | `VIEW:VOSTRO` y `VIEW:NOSTRO` |
-| POST | `/account/client` | Alta de cliente con su primera cuenta VOSTRO (§8.3) | `OPEN_ACCOUNT:VOSTRO` |
-| POST | `/account/vostro` | Cuenta VOSTRO adicional para un cliente existente (§8.4) | `OPEN_ACCOUNT:VOSTRO` |
-| POST | `/account/nostro` | Cuenta NOSTRO (§8.13) | `OPEN_ACCOUNT:NOSTRO` |
-| POST | `/account/<account_id>/deposit` | Fondeo (§8.5, §8.10) | `DEPOSIT` sobre el alcance de la cuenta |
-| POST | `/account/<account_id>/withdrawal` | Retiro (§8.6, §8.11) | `WITHDRAW` sobre el alcance de la cuenta |
-| POST | `/account/<account_id>/transfer` | Transferencia; la cuenta de la ruta es el origen (§8.7, §8.12) | `TRANSFER` sobre el alcance del origen |
-| GET | `/account/<account_id>/balance` | Historial de movimientos con saldo (§8.8, §8.9) | `VIEW` sobre el alcance de la cuenta |
-| POST | `/account/transaction/<transaction_id>/reversal` | Reverso de una transacción (§8.15) | `REVERSE` sobre el alcance de cada cuenta de la transacción |
+| GET | `/account/` | List of every account, NOSTRO and VOSTRO, with its holder and current balance | `VIEW:VOSTRO` and `VIEW:NOSTRO` |
+| POST | `/account/client` | Client signup with their first VOSTRO account (§8.3) | `OPEN_ACCOUNT:VOSTRO` |
+| POST | `/account/vostro` | Additional VOSTRO account for an existing client (§8.4) | `OPEN_ACCOUNT:VOSTRO` |
+| POST | `/account/nostro` | NOSTRO account (§8.13) | `OPEN_ACCOUNT:NOSTRO` |
+| POST | `/account/<account_id>/deposit` | Deposit (§8.5, §8.10) | `DEPOSIT` on the account's scope |
+| POST | `/account/<account_id>/withdrawal` | Withdrawal (§8.6, §8.11) | `WITHDRAW` on the account's scope |
+| POST | `/account/<account_id>/transfer` | Transfer; the account in the path is the source (§8.7, §8.12) | `TRANSFER` on the source's scope |
+| GET | `/account/<account_id>/balance` | Movement history with balance (§8.8, §8.9) | `VIEW` on the account's scope |
+| POST | `/account/transaction/<transaction_id>/reversal` | Reversal of a transaction (§8.15) | `REVERSE` on the scope of each account of the transaction |
 
-| Ruta | Cuerpo |
+| Route | Body |
 |---|---|
 | `POST /account/client` | `email`, `password`, `name`, `alias` |
-| `POST /account/vostro` | `email` (del cliente), `alias` |
+| `POST /account/vostro` | `email` (of the client), `alias` |
 | `POST /account/nostro` | `alias` |
 | `POST /account/<account_id>/deposit`, `/withdrawal` | `amount` |
 | `POST /account/<account_id>/transfer` | `destination_account_id`, `amount` |
 | `POST /account/transaction/<transaction_id>/reversal` | — |
 
-**Aperturas** — responden 201:
+**Openings** — respond 201:
 
 ```json
 {
   "id": "5f0c…",
   "account_class": "VOSTRO",
-  "alias": "Ahorro",
+  "alias": "Savings",
   "holder": "Juan Pérez",
   "holder_id": "9a31…",
   "created_at": "2026-10-10T12:45:24.680332-06:00"
 }
 ```
 
-En una cuenta NOSTRO, `holder` es el nombre del banco y `holder_id` es nulo.
+On a NOSTRO account, `holder` is the bank's name and `holder_id` is null.
 
-**Operaciones** — responden 201:
+**Operations** — respond 201:
 
 ```json
 {
@@ -405,9 +405,9 @@ En una cuenta NOSTRO, `holder` es el nombre del banco y `holder_id` es nulo.
 }
 ```
 
-`balance` es el de `account_id` después de la operación. `destination_account_id` es nulo salvo en transferencias.
+`balance` is that of `account_id` after the operation. `destination_account_id` is null except in transfers.
 
-**Reverso** — responde 201:
+**Reversal** — responds 201:
 
 ```json
 {
@@ -424,15 +424,15 @@ En una cuenta NOSTRO, `holder` es el nombre del banco y `holder_id` es nulo.
 }
 ```
 
-`accounts` trae cada cuenta de la transacción original con su saldo después del reverso: una en fondeos y retiros, dos en transferencias. Responde 400 si la transacción no existe, ya fue reversada, es un reverso o si reversarla dejaría una cuenta con saldo negativo.
+`accounts` lists each account of the original transaction with its balance after the reversal: one for deposits and withdrawals, two for transfers. It responds 400 if the transaction does not exist, was already reversed, is a reversal, or if reversing it would leave an account with a negative balance.
 
-**Saldo e historial** — responde 200:
+**Balance and history** — responds 200:
 
 ```json
 {
   "account_id": "5f0c…",
   "account_class": "VOSTRO",
-  "alias": "Ahorro",
+  "alias": "Savings",
   "movements": [
     {
       "movement_id": "19d5…",
@@ -456,59 +456,59 @@ En una cuenta NOSTRO, `holder` es el nombre del banco y `holder_id` es nulo.
 }
 ```
 
-Los movimientos van del más antiguo al más reciente, completos y sin paginación. No hay un saldo global en la cabecera: el saldo actual es el del último movimiento, y una cuenta sin movimientos devuelve la lista vacía (saldo cero).
+Movements go from oldest to newest, complete and without pagination. There is no overall balance in the header: the current balance is the last movement's, and an account without movements returns an empty list (zero balance).
 
-`GET /account/` responde 200 con `{"accounts": [...]}`, de la más antigua a la más reciente y sin paginación. Cada cuenta trae los mismos campos que una apertura (`id`, `account_class`, `alias`, `holder`, `holder_id` y `created_at`) más `balance`, su saldo actual como texto con 2 decimales (`"0.00"` si no tiene movimientos). Exige `VIEW` sobre `VOSTRO` y sobre `NOSTRO`, así que solo la ven el operador y el admin; un cliente recibe 403.
+`GET /account/` responds 200 with `{"accounts": [...]}`, oldest to newest and without pagination. Each account carries the same fields as an opening (`id`, `account_class`, `alias`, `holder`, `holder_id` and `created_at`) plus `balance`, its current balance as text with 2 decimals (`"0.00"` if it has no movements). It requires `VIEW` on `VOSTRO` and on `NOSTRO`, so only the operator and the admin can see it; a client gets 403.
 
-`GET /` es una ruta de prueba, sin token, que responde `{"message": "Hello, World!"}`.
+`GET /` is a test route, without a token, that responds `{"message": "Hello, World!"}`.
 
-## Servicios de aplicación
+## Application services
 
-Cada servicio es una clase con un único método `invoke(...)`, registrada como `Factory` en `DIContainer`.
+Each service is a class with a single `invoke(...)` method, registered as a `Factory` in `DIContainer`.
 
-### Módulo `user`
+### `user` module
 
-| Servicio | Qué hace |
+| Service | What it does |
 |---|---|
-| `UserCreator` | Valida email único y rol existente, y guarda el usuario con el hash de su contraseña. Lo usan `UserSignup` y `create_admin.py`. |
-| `UserSignup` | Exige `MANAGE_USERS` y solo acepta los roles `ADMIN` y `OPERATOR`. Los clientes se dan de alta junto con su cuenta. |
-| `UserLogin` | Verifica credenciales y que el usuario esté activo, y emite el JWT. |
-| `UserAuthenticator` | Traduce el token a un `AuthenticatedUser` con su id, rol y permisos. Lo usa `@authenticated`. |
-| `UserProfileReader` | Devuelve el perfil del usuario autenticado, sin el hash de la contraseña. |
-| `PasswordChanger` | Cambia la contraseña y apaga `must_change_password`. |
-| `UserDeactivator` | Exige `MANAGE_USERS` y pone `active` en false. Bloquea a los admins activos y rechaza desactivar al único que queda. |
+| `UserCreator` | Validates a unique email and an existing role, and saves the user with their password hash. Used by `UserSignup` and `create_admin.py`. |
+| `UserSignup` | Requires `MANAGE_USERS` and only accepts the `ADMIN` and `OPERATOR` roles. Clients sign up together with their account. |
+| `UserLogin` | Verifies the credentials and that the user is active, and issues the JWT. |
+| `UserAuthenticator` | Translates the token into an `AuthenticatedUser` with their id, role and permissions. Used by `@authenticated`. |
+| `UserProfileReader` | Returns the authenticated user's profile, without the password hash. |
+| `PasswordChanger` | Changes the password and turns off `must_change_password`. |
+| `UserDeactivator` | Requires `MANAGE_USERS` and sets `active` to false. Locks the active admins and refuses to deactivate the last one. |
 
-### Módulo `account`
+### `account` module
 
-| Servicio | Qué hace |
+| Service | What it does |
 |---|---|
-| `ClientSignup` | Crea el usuario `CLIENT` y su primera cuenta en un solo commit: se crean ambos o ninguno. |
-| `VostroAccountOpener` | Abre otra cuenta a un cliente. Rechaza email inexistente, usuario que no es cliente o está inactivo, y alias repetido para ese cliente. |
-| `NostroAccountOpener` | Abre una cuenta del banco. Rechaza alias repetido entre las NOSTRO. |
-| `AccountLister` | Exige `VIEW` sobre `VOSTRO` y sobre `NOSTRO` y devuelve todas las cuentas con su titular y su saldo actual. No bloquea ni modifica nada. |
-| `AccountFunder` | Fondeo: bloquea la cuenta, exige `DEPOSIT`, arma la transacción, la valida y la guarda. |
-| `AccountWithdrawer` | Retiro: igual que el fondeo, con `WITHDRAW`. Sin fondos suficientes, la validación lo rechaza. |
-| `AccountTransfer` | Transferencia: bloquea ambas cuentas en orden de id y exige `TRANSFER` solo sobre el origen. |
-| `TransactionReverser` | Reverso: bloquea las cuentas de la transacción original, exige `REVERSE` sobre cada una y guarda una transacción `REVERSAL` con los movimientos opuestos. Rechaza un segundo reverso, el reverso de un reverso y el que dejaría una cuenta en negativo. |
-| `AccountBalanceReader` | Exige `VIEW` y devuelve el historial de la vista `account_history`. No bloquea ni modifica nada. |
+| `ClientSignup` | Creates the `CLIENT` user and their first account in a single commit: both are created or neither is. |
+| `VostroAccountOpener` | Opens another account for a client. Rejects a nonexistent email, a user who is not a client or is inactive, and a duplicate alias for that client. |
+| `NostroAccountOpener` | Opens a bank account. Rejects a duplicate alias among NOSTRO accounts. |
+| `AccountLister` | Requires `VIEW` on `VOSTRO` and on `NOSTRO` and returns every account with its holder and current balance. Locks and modifies nothing. |
+| `AccountFunder` | Deposit: locks the account, requires `DEPOSIT`, builds the transaction, validates it and saves it. |
+| `AccountWithdrawer` | Withdrawal: same as the deposit, with `WITHDRAW`. Without enough funds, validation rejects it. |
+| `AccountTransfer` | Transfer: locks both accounts in id order and requires `TRANSFER` only on the source. |
+| `TransactionReverser` | Reversal: locks the original transaction's accounts, requires `REVERSE` on each one and saves a `REVERSAL` transaction with the opposite movements. Rejects a second reversal, the reversal of a reversal, and one that would leave an account negative. |
+| `AccountBalanceReader` | Requires `VIEW` and returns the history from the `account_history` view. Locks and modifies nothing. |
 
-Hay **un servicio por operación**, no uno por rol: el mismo `AccountFunder` atiende al cliente que fondea su cuenta y al admin que fondea la de un cliente o una del banco. La diferencia la resuelve `authorize(actor, action, account)` con el alcance de la cuenta.
+There is **one service per operation**, not one per role: the same `AccountFunder` serves the client depositing to their account and the admin depositing to a client's or a bank's account. The difference is resolved by `authorize(actor, action, account)` with the account's scope.
 
-Así se arma una operación:
+This is how an operation is put together:
 
 ```python
-amount = parse_amount(amount)                               # valida antes de abrir la transacción de BD
+amount = parse_amount(amount)                               # validates before opening the DB transaction
 accounts = repository.find_by_ids_for_update([account_id])  # SELECT ... FOR UPDATE
-authorize(actor, Action.DEPOSIT, account)                   # permiso (acción, alcance)
-balance = repository.balance(account.id)                    # créditos − débitos del principal
-transaction = Transaction.deposit(account.id, amount)       # arma los movimientos
-transaction.validate({account.id: balance})                 # invariantes
-repository.save_transaction(transaction)                    # un solo commit, libera el bloqueo
+authorize(actor, Action.DEPOSIT, account)                   # (action, scope) permission
+balance = repository.balance(account.id)                    # main-side credits − debits
+transaction = Transaction.deposit(account.id, amount)       # builds the movements
+transaction.validate({account.id: balance})                 # invariants
+repository.save_transaction(transaction)                    # a single commit, releases the lock
 ```
 
-## Modelo de datos
+## Data model
 
-Las claves primarias son UUID y las fechas son `timestamptz`.
+Primary keys are UUIDs and dates are `timestamptz`.
 
 ```
 roles ──< role_permissions >── permissions
@@ -518,26 +518,26 @@ roles ──< role_permissions >── permissions
 
 ### RBAC
 
-| Tabla | Columnas | Restricciones |
+| Table | Columns | Constraints |
 |---|---|---|
-| `roles` | `id`, `name`, `description` | `name` único |
-| `permissions` | `id`, `action`, `scope` | Par `(action, scope)` único. `scope` es nulo solo en `MANAGE_USERS`. `OPEN_ACCOUNT` no admite `OWN` |
-| `role_permissions` | `role_id`, `permission_id` | PK compuesta |
-| `users` | `id`, `email`, `name`, `password_hash`, `role_id`, `active`, `must_change_password`, `created_at` | `email` único. `name` solo lo llevan los clientes |
+| `roles` | `id`, `name`, `description` | `name` unique |
+| `permissions` | `id`, `action`, `scope` | `(action, scope)` pair unique. `scope` is null only for `MANAGE_USERS`. `OPEN_ACCOUNT` does not allow `OWN` |
+| `role_permissions` | `role_id`, `permission_id` | Composite PK |
+| `users` | `id`, `email`, `name`, `password_hash`, `role_id`, `active`, `must_change_password`, `created_at` | `email` unique. Only clients have a `name` |
 
-### Contabilidad
+### Accounting
 
-| Tabla | Columnas | Restricciones |
+| Table | Columns | Constraints |
 |---|---|---|
-| `accounts` | `id`, `account_class`, `alias`, `holder_id`, `created_at` | VOSTRO exige titular y NOSTRO lo prohíbe. `UNIQUE NULLS NOT DISTINCT (holder_id, alias)` |
-| `transactions` | `id`, `type`, `original_transaction_id`, `description`, `created_at` | `original_transaction_id` es único y solo lo llevan los reversos |
-| `movements` | `id`, `transaction_id`, `account_id`, `side`, `entry_type`, `amount`, `created_at` | `amount > 0`. `created_at` toma `clock_timestamp()` |
+| `accounts` | `id`, `account_class`, `alias`, `holder_id`, `created_at` | VOSTRO requires a holder and NOSTRO forbids it. `UNIQUE NULLS NOT DISTINCT (holder_id, alias)` |
+| `transactions` | `id`, `type`, `original_transaction_id`, `description`, `created_at` | `original_transaction_id` is unique and only reversals have it |
+| `movements` | `id`, `transaction_id`, `account_id`, `side`, `entry_type`, `amount`, `created_at` | `amount > 0`. `created_at` takes `clock_timestamp()` |
 
-No existe una columna de saldo en ninguna tabla.
+No table has a balance column.
 
-### Vista `account_history`
+### `account_history` view
 
-Tiene una fila por cada movimiento del lado `MAIN`, con el tipo de su transacción y el saldo acumulado de la cuenta, calculado con una función de ventana:
+It has one row per `MAIN`-side movement, with its transaction's type and the account's running balance, computed with a window function:
 
 ```sql
 CREATE OR REPLACE VIEW account_history AS
@@ -556,7 +556,7 @@ JOIN transactions t ON t.id = m.transaction_id
 WHERE m.side = 'MAIN'
 ```
 
-Está definida en `src/account/domain_model.py` y se crea y se borra junto con las tablas. También se puede consultar directamente desde SQL:
+It is defined in `src/account/domain_model.py` and is created and dropped together with the tables. It can also be queried directly from SQL:
 
 ```sql
 SELECT type, entry_type, amount, balance, created_at
@@ -565,42 +565,42 @@ WHERE account_id = '<account_id>'
 ORDER BY created_at, movement_id;
 ```
 
-## Concurrencia
+## Concurrency
 
-Como el saldo se calcula a partir de los movimientos, dos operaciones simultáneas sobre la misma cuenta podrían pasar la validación de fondos al mismo tiempo. Para evitarlo (§10):
+Since the balance is computed from the movements, two concurrent operations on the same account could pass the funds validation at the same time. To prevent it (§10):
 
-- Cada operación bloquea las filas de las cuentas involucradas con `SELECT ... FOR UPDATE` **antes** de calcular saldos. El bloqueo se libera con el commit.
-- Una transferencia bloquea ambas cuentas siempre en el mismo orden, por `id`, para evitar deadlocks.
-- `movements.created_at` usa `clock_timestamp()` y no `now()`. `now()` es la hora en que empezó la transacción de BD, antes de obtener el bloqueo; con la hora real de inserción, el orden por fecha del historial es el orden en que se aplicaron los movimientos.
+- Each operation locks the rows of the involved accounts with `SELECT ... FOR UPDATE` **before** computing balances. The lock is released by the commit.
+- A transfer always locks both accounts in the same order, by `id`, to avoid deadlocks.
+- `movements.created_at` uses `clock_timestamp()` and not `now()`. `now()` is the time the DB transaction started, before acquiring the lock; with the actual insert time, the history's date order is the order in which the movements were applied.
 
-La consulta de saldo no bloquea nada.
+The balance inquiry locks nothing.
 
-## Ejemplo de punta a punta
+## End-to-end example
 
-Con el servidor corriendo y [`jq`](https://jqlang.github.io/jq/) instalado:
+With the server running and [`jq`](https://jqlang.github.io/jq/) installed:
 
 ```bash
 BASE=http://localhost:8080
 
-# Login del admin y cambio de la contraseña inicial
+# Admin login and change of the initial password
 TOKEN=$(curl -s -X POST $BASE/user/login \
   -H 'Content-Type: application/json' \
-  -d '{"email":"admin@example.com","password":"PASSWORD_INICIAL"}' | jq -r .token)
+  -d '{"email":"admin@example.com","password":"INITIAL_PASSWORD"}' | jq -r .token)
 
 curl -s -X POST $BASE/user/password \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -d '{"current_password":"PASSWORD_INICIAL","new_password":"PASSWORD_NUEVA"}'
+  -d '{"current_password":"INITIAL_PASSWORD","new_password":"NEW_PASSWORD"}'
 
-# Dos clientes, cada uno con su cuenta
+# Two clients, each with their account
 A=$(curl -s -X POST $BASE/account/client \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -d '{"email":"juan@example.com","password":"inicial123","name":"Juan Pérez","alias":"Ahorro"}' | jq -r .id)
+  -d '{"email":"juan@example.com","password":"initial123","name":"Juan Pérez","alias":"Savings"}' | jq -r .id)
 
 B=$(curl -s -X POST $BASE/account/client \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -d '{"email":"maria@example.com","password":"inicial123","name":"María López","alias":"Ahorro"}' | jq -r .id)
+  -d '{"email":"maria@example.com","password":"initial123","name":"María López","alias":"Savings"}' | jq -r .id)
 
-# Fondeo de la primera y transferencia a la segunda
+# Deposit to the first one and transfer to the second
 curl -s -X POST $BASE/account/$A/deposit \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
   -d '{"amount":"500.00"}'
@@ -609,20 +609,19 @@ curl -s -X POST $BASE/account/$A/transfer \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
   -d "{\"destination_account_id\":\"$B\",\"amount\":\"100.00\"}"
 
-# Historial de cada cuenta: 400.00 en la primera, 100.00 en la segunda
+# Each account's history: 400.00 in the first, 100.00 in the second
 curl -s $BASE/account/$A/balance -H "Authorization: Bearer $TOKEN"
 curl -s $BASE/account/$B/balance -H "Authorization: Bearer $TOKEN"
 ```
 
-## Pendientes
+## Pending
 
-Siguen abiertos en §11 de la especificación y no están implementados:
+Still open in §11 of the specification and not implemented:
 
-- Idempotencia de operaciones (clave de idempotencia por solicitud).
-- Migraciones: `migrations/` está vacío y el esquema se crea con `create_admin.py`.
-- Pruebas automatizadas: `tests/` está vacío. Para verificar una ruta se usa `app.test_client()`.
-- Paginación del historial de movimientos.
+- Operation idempotency (an idempotency key per request).
+- Migrations: `migrations/` is empty and the schema is created with `create_admin.py`.
+- Automated tests: `tests/` is empty. A route is verified with `app.test_client()`.
 
-## Licencia
+## License
 
-Distribuido bajo la licencia MIT. El texto completo está en [`LICENSE`](LICENSE).
+Distributed under the MIT license. The full text is in [`LICENSE`](LICENSE).

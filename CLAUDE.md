@@ -174,7 +174,7 @@ Decisiones que cierran pendientes de §11:
 ## Convenciones
 
 - Indentación de 2 espacios.
-- Idioma: identificadores, rutas, claves JSON, esquema de BD, valores de enums, comentarios y mensajes de error en **inglés**. Los comentarios citan la sección de la especificación (`§7`, `§8.1`). La especificación también está en inglés; `README.md`, este archivo y los mensajes de commit siguen en español.
+- Idioma: identificadores, rutas, claves JSON, esquema de BD, valores de enums, comentarios y mensajes de error en **inglés**. Los comentarios citan la sección de la especificación (`§7`, `§8.1`). La especificación y `README.md` también están en inglés; este archivo y los mensajes de commit siguen en español.
 - Errores como JSON `{"error": "..."}`:
   - 400: la ruta valida los campos obligatorios y convierte en 400 los `ValueError` de los servicios.
   - 401 y 403: los servicios lanzan `AuthenticationError` o `PermissionDenied`, y los manejadores globales de `src/main/routes.py` los convierten.
