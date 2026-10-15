@@ -39,7 +39,6 @@ The code is organized by business module, and each module holds its layers insid
 docker-compose.yml        # PostgreSQL
 .env.example              # reference environment variables (.env is not committed)
 app.py                    # entry point: creates the Flask app from src/main
-migrations/
 tests/
 src/
 ├── main/                 # shared: configuration, DB session, JWT, error handling, route registration, dependency injection
@@ -506,9 +505,9 @@ There are **exactly three roles**: `CLIENT`, `OPERATOR` and `ADMIN`.
 
 The RBAC is a **fixed seed**:
 
-- Roles, permissions and `role_permissions` are loaded in the initial migration.
+- Roles, permissions and `role_permissions` are loaded when the schema is created.
 - There is no endpoint to create, edit or delete roles, permissions or assignments.
-- Changing the permission matrix requires a new migration.
+- Changing the permission matrix requires changing the seed.
 - The only thing managed at runtime is which role each user has and whether they are active.
 
 **`roles`**
@@ -571,7 +570,7 @@ The rule "the holder of a VOSTRO account must have role `CLIENT`" cannot be expr
 
 ### Seed data
 
-An initial migration loads the roles and permissions:
+The seed loads the roles and permissions:
 
 | Role | Permissions |
 |---|---|
@@ -624,5 +623,4 @@ Since the balance is computed from movements, two concurrent operations on the s
 - [x] API endpoints (routes, payloads, responses, error codes).
 - [x] Account opening: required holder data.
 - [x] Reversals: whether they are implemented as a transaction with its own type that references the original.
-- [ ] Migrations (Alembic or another tool).
 - [ ] Testing strategy.

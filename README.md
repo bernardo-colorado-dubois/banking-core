@@ -66,7 +66,7 @@ venv/bin/python create_admin.py
 venv/bin/python app.py
 ```
 
-> **`create_admin.py` is destructive:** it drops and recreates every table and the `account_history` view. Today it is the only way to create the schema, because there are no migrations yet.
+> **`create_admin.py` is destructive:** it drops and recreates every table and the `account_history` view. It is the only way to create the schema.
 
 ### Environment variables
 
@@ -618,7 +618,6 @@ curl -s $BASE/account/$B/balance -H "Authorization: Bearer $TOKEN"
 
 Still open in §11 of the specification and not implemented:
 
-- Migrations: `migrations/` is empty and the schema is created with `create_admin.py`.
 - Automated tests: `tests/` is empty. A route is verified with `app.test_client()`.
 
 ## License

@@ -381,7 +381,7 @@ venv/bin/python create_admin.py
 
 <span class="c"># 5. Development server at http://localhost:8080</span>
 venv/bin/python app.py</pre>
-      <div class="warn"><b>create_admin.py is destructive:</b> it drops and recreates every table and the <code>account_history</code> view. Today it is the only way to create the schema, because there are no migrations yet.</div>
+      <div class="warn"><b>create_admin.py is destructive:</b> it drops and recreates every table and the <code>account_history</code> view. It is the only way to create the schema.</div>
       <div class="chips">
         <span class="chip">Python</span><span class="chip">Flask 3.1</span><span class="chip">SQLAlchemy 2.1</span><span class="chip">PostgreSQL 17</span>
         <span class="chip">psycopg 3</span><span class="chip">PyJWT + bcrypt</span><span class="chip">dependency-injector</span><span class="chip">Docker</span>
@@ -395,7 +395,6 @@ venv/bin/python app.py</pre>
       <h2>What it does not do yet</h2>
       <p class="intro">Still open in the specification and not implemented.</p>
       <ul class="card todo">
-        <li>Schema migrations.</li>
         <li>Automated tests.</li>
       </ul>
     </div>
