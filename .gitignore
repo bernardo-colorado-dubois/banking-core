@@ -7,3 +7,4 @@ venv/
 # Python
 __pycache__/
 *.pyc
+debug/
