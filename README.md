@@ -456,9 +456,9 @@ On a NOSTRO account, `holder` is the bank's name and `holder_id` is null.
 }
 ```
 
-Movements go from oldest to newest, complete and without pagination. There is no overall balance in the header: the current balance is the last movement's, and an account without movements returns an empty list (zero balance).
+Movements go from oldest to newest. There is no overall balance in the header: the current balance is the last movement's, and an account without movements returns an empty list (zero balance).
 
-`GET /account/` responds 200 with `{"accounts": [...]}`, oldest to newest and without pagination. Each account carries the same fields as an opening (`id`, `account_class`, `alias`, `holder`, `holder_id` and `created_at`) plus `balance`, its current balance as text with 2 decimals (`"0.00"` if it has no movements). It requires `VIEW` on `VOSTRO` and on `NOSTRO`, so only the operator and the admin can see it; a client gets 403.
+`GET /account/` responds 200 with `{"accounts": [...]}`, oldest to newest. Each account carries the same fields as an opening (`id`, `account_class`, `alias`, `holder`, `holder_id` and `created_at`) plus `balance`, its current balance as text with 2 decimals (`"0.00"` if it has no movements). It requires `VIEW` on `VOSTRO` and on `NOSTRO`, so only the operator and the admin can see it; a client gets 403.
 
 `GET /` is a test route, without a token, that responds `{"message": "Hello, World!"}`.
 

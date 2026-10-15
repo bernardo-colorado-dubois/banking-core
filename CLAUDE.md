@@ -96,7 +96,7 @@ Cuerpos y respuestas:
 - `POST /account/vostro`: recibe `email` del cliente existente y `alias`.
 - `POST /account/nostro`: recibe `alias`.
 - Las tres aperturas devuelven 201 con `id`, `account_class`, `alias`, `holder`, `holder_id`, `created_at`. `holder` es el nombre del cliente o, en NOSTRO, `BANK_NAME` (con `holder_id` nulo).
-- `GET /account/`: devuelve `accounts`, la lista completa de cuentas NOSTRO y VOSTRO de la más antigua a la más reciente, cada una con los mismos campos que una apertura más `balance`, su saldo actual (`"0.00"` si no tiene movimientos). Sin paginación.
+- `GET /account/`: devuelve `accounts`, la lista completa de cuentas NOSTRO y VOSTRO de la más antigua a la más reciente, cada una con los mismos campos que una apertura más `balance`, su saldo actual (`"0.00"` si no tiene movimientos).
 - `POST /account/<account_id>/deposit` y `/withdrawal`: reciben `amount`.
 - `POST /account/<account_id>/transfer`: la cuenta de la ruta es el origen; recibe `destination_account_id`, `amount`.
 - Las tres operaciones devuelven 201 con `transaction_id`, `type`, `amount`, `account_id`, `destination_account_id` (nulo salvo en transferencias), `balance` (el de `account_id` después de la operación) y `created_at`.
@@ -169,7 +169,7 @@ Decisiones que cierran pendientes de §11:
 - El admin sí opera cuentas VOSTRO, por los permisos de la semilla; no hay un servicio aparte para eso.
 - Solo se desactivan usuarios (§8.14): no hay reactivación ni cambio de rol, esos casos de uso no aplican. Un admin puede desactivarse a sí mismo si queda otro activo, y las cuentas de un cliente desactivado se conservan.
 - Un reverso es una transacción de tipo `REVERSAL` que referencia a la original (§8.15). Es total, único por transacción y no se puede reversar; si deja una cuenta en negativo se rechaza (§6). En el historial aparece como un movimiento más, con tipo `REVERSAL`.
-- La consulta de saldo devuelve el historial de movimientos con el saldo tras cada uno, sin saldo global; no hay un servicio aparte ni paginación.
+- La consulta de saldo devuelve el historial de movimientos con el saldo tras cada uno, sin saldo global; no hay un servicio aparte.
 
 ## Convenciones
 

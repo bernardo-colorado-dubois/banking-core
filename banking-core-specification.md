@@ -482,7 +482,7 @@ Bodies and responses:
 
 - **Opening fields:** `id`, `account_class`, `alias`, `holder`, `holder_id`, `created_at`. In NOSTRO accounts, `holder` is the bank's name and `holder_id` is null.
 - **Operation fields:** `transaction_id`, `type`, `amount`, `account_id`, `destination_account_id` (null except in transfers), `balance` (that of `account_id` after the operation), `created_at`.
-- **Movements:** oldest to newest, without pagination. Each one carries `movement_id`, `transaction_id`, `type`, `entry_type`, `amount`, `balance` (the account's balance after that movement) and `created_at`. There is no overall balance: the current one is the last movement's.
+- **Movements:** oldest to newest. Each one carries `movement_id`, `transaction_id`, `type`, `entry_type`, `amount`, `balance` (the account's balance after that movement) and `created_at`. There is no overall balance: the current one is the last movement's.
 - **Reversal accounts:** one `account_id`, `balance` entry per account of the original transaction, with its balance after the reversal.
 - `amount` is accepted as text or as a JSON number. Amounts and balances are returned as text with 2 decimals (`"100.50"`), never as float. Dates are ISO 8601.
 
