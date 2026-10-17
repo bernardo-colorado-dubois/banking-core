@@ -1,7 +1,7 @@
 from decimal import Decimal, InvalidOperation
 from uuid import UUID
 
-from src.account.domain_model import Account, AccountRepository, AccountClass, Side, TransactionType, Transaction
+from src.account.domain_model import Account, AccountRepository, AccountClass, TransactionType, Transaction
 from src.account.dto import AccountDetail, AccountSummary, AccountBalance, AccountMovement, OperationResult, ReversalResult
 from src.user.domain_model import User, UserRepository, RoleRepository, Action, Scope
 from src.user.dto import UserCreate, AuthenticatedUser
@@ -38,8 +38,8 @@ class ClientSignup:
         active=dto.active,
         must_change_password=dto.must_change_password
       )
-      # User and account go in a single commit: both are created or neither is
-      account = Account(account_class=AccountClass.VOSTRO, alias=alias, holder=user)
+      # User, account and contra account go in a single commit: all are created or none is
+      account = Account.open(AccountClass.VOSTRO, alias, holder=user)
       self.repository.save(account)
 
       return AccountDetail(
@@ -81,7 +81,7 @@ class VostroAccountOpener:
       if self.repository.find_by_holder_and_alias(user.id, alias) is not None:
         raise ValueError(f'The client already has an account with the alias {alias}')
 
-      account = Account(account_class=AccountClass.VOSTRO, alias=alias, holder_id=user.id)
+      account = Account.open(AccountClass.VOSTRO, alias, holder_id=user.id)
       self.repository.save(account)
 
       return AccountDetail(
@@ -112,7 +112,7 @@ class NostroAccountOpener:
         raise ValueError(f'A bank account with the alias {alias} already exists')
 
       # No holder user: the holder is the bank's name (§7)
-      account = Account(account_class=AccountClass.NOSTRO, alias=alias, holder_id=None)
+      account = Account.open(AccountClass.NOSTRO, alias, holder_id=None)
       self.repository.save(account)
 
       return AccountDetail(
@@ -203,8 +203,8 @@ class AccountFunder:
       authorize(actor, Action.DEPOSIT, account)
 
       balance = self.repository.balance(account.id)
-      transaction = Transaction.deposit(account.id, amount)
-      transaction.validate({account.id: balance})
+      transaction = Transaction.deposit(account, amount)
+      transaction.validate([account], {account.id: balance})
       self.repository.save_transaction(transaction)
 
       return OperationResult(
@@ -236,8 +236,8 @@ class AccountWithdrawer:
 
       # Without enough funds, validate rejects the withdrawal (§6)
       balance = self.repository.balance(account.id)
-      transaction = Transaction.withdrawal(account.id, amount)
-      transaction.validate({account.id: balance})
+      transaction = Transaction.withdrawal(account, amount)
+      transaction.validate([account], {account.id: balance})
       self.repository.save_transaction(transaction)
 
       return OperationResult(
@@ -277,8 +277,8 @@ class AccountTransfer:
         raise ValueError('The destination account does not exist')
 
       balance = self.repository.balance(source.id)
-      transaction = Transaction.transfer(source.id, destination.id, amount)
-      transaction.validate({source.id: balance, destination.id: self.repository.balance(destination.id)})
+      transaction = Transaction.transfer(source, destination, amount)
+      transaction.validate([source, destination], {source.id: balance, destination.id: self.repository.balance(destination.id)})
       self.repository.save_transaction(transaction)
 
       return OperationResult(
@@ -309,8 +309,9 @@ class TransactionReverser:
       if original is None:
         raise ValueError('The transaction does not exist')
 
-      # The original's accounts are locked in id order (§10). Two concurrent
-      # reversals of the same transaction run one after the other
+      # The original's accounts are locked in id order (§10); the lock leaves out
+      # the contra accounts. Two concurrent reversals of the same transaction
+      # run one after the other
       account_ids = list({movement.account_id for movement in original.movements})
       accounts = self.repository.find_by_ids_for_update(account_ids)
       for account in accounts:
@@ -326,14 +327,14 @@ class TransactionReverser:
       balances = {account.id: self.repository.balance(account.id) for account in accounts}
       transaction = Transaction.reversal(original)
       # §6.3 applies as well: if the money is no longer in the account, the reversal is rejected
-      transaction.validate(balances)
+      transaction.validate(accounts, balances)
 
       result = dict(
         original_transaction_id=original.id,
         original_type=original.type,
         amount=original.movements[0].amount,
         balances={
-          account_id: balance + transaction.change(account_id, Side.MAIN)
+          account_id: balance + transaction.change(account_id)
           for account_id, balance in balances.items()
         }
       )

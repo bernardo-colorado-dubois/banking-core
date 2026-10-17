@@ -95,7 +95,7 @@ Cuerpos y respuestas:
 - `POST /account/client`: recibe `email`, `password`, `name`, `alias`. Crea el usuario `CLIENT` y su primera cuenta VOSTRO.
 - `POST /account/vostro`: recibe `email` del cliente existente y `alias`.
 - `POST /account/nostro`: recibe `alias`.
-- Las tres aperturas devuelven 201 con `id`, `account_class`, `alias`, `holder`, `holder_id`, `created_at`. `holder` es el nombre del cliente o, en NOSTRO, `BANK_NAME` (con `holder_id` nulo).
+- Las tres aperturas crean también la cuenta de contrapartida (§4.2) y devuelven 201 con `id`, `account_class`, `alias`, `holder`, `holder_id`, `created_at`. `holder` es el nombre del cliente o, en NOSTRO, `BANK_NAME` (con `holder_id` nulo). La contrapartida no aparece en la respuesta.
 - `GET /account/`: devuelve `accounts`, la lista completa de cuentas NOSTRO y VOSTRO de la más antigua a la más reciente, cada una con los mismos campos que una apertura más `balance`, su saldo actual (`"0.00"` si no tiene movimientos).
 - `POST /account/<account_id>/deposit` y `/withdrawal`: reciben `amount`.
 - `POST /account/<account_id>/transfer`: la cuenta de la ruta es el origen; recibe `destination_account_id`, `amount`.
@@ -124,7 +124,7 @@ Módulo `account`:
 
 | Servicio | Qué hace |
 |---|---|
-| `ClientSignup` | Exige `OPEN_ACCOUNT:VOSTRO`. Crea el usuario `CLIENT` y su cuenta en un solo commit: la cuenta se guarda con el titular nuevo en cascada. No pasa por `UserCreator`, que hace su propio commit. |
+| `ClientSignup` | Exige `OPEN_ACCOUNT:VOSTRO`. Crea el usuario `CLIENT`, su cuenta y la contrapartida en un solo commit: la cuenta se guarda con el titular nuevo y su contrapartida en cascada. No pasa por `UserCreator`, que hace su propio commit. |
 | `VostroAccountOpener` | Exige `OPEN_ACCOUNT:VOSTRO`. Rechaza email inexistente, usuario que no es `CLIENT` o inactivo, y alias repetido para ese cliente. |
 | `NostroAccountOpener` | Exige `OPEN_ACCOUNT:NOSTRO`. Rechaza alias repetido entre las cuentas del banco. |
 | `AccountLister` | Exige `VIEW` sobre `VOSTRO` y sobre `NOSTRO` a la vez, porque la lista trae ambas clases; por la semilla solo lo cumplen operador y admin. Devuelve todas las cuentas con su titular y su saldo actual; los saldos salen de una sola consulta agrupada (`balances`), no de una por cuenta. No bloquea ni modifica nada. |
@@ -137,9 +137,10 @@ Cómo se arma una operación:
 
 - Hay **un servicio por operación**, no uno por rol. `authorize(actor, action, account)` calcula el alcance con `account.scope_for(actor.id)` (`OWN`, `VOSTRO` o `NOSTRO`) y exige el permiso `(action, scope)`. Por eso el admin, que tiene los permisos sobre `VOSTRO`, también opera cuentas de clientes.
 - `parse_amount` valida el monto antes de abrir la transacción de BD.
-- `Transaction.deposit`, `.withdrawal` y `.transfer` arman los movimientos de §5. `transaction.validate(balances)` aplica las invariantes de §6 y se llama siempre antes de `save_transaction`.
+- `Account.open(account_class, alias, ...)` crea la cuenta NOSTRO o VOSTRO con su contrapartida (`contra`); las aperturas no construyen `Account` directamente.
+- `Transaction.deposit`, `.withdrawal` y `.transfer` reciben las cuentas y arman los movimientos de §5 sobre cada cuenta y su `contra_account_id`. `transaction.validate(accounts, balances)` aplica las invariantes de §6 y se llama siempre antes de `save_transaction`.
 - `Transaction.reversal(original)` repite los movimientos de la original con el `entry_type` opuesto y la referencia en `original_transaction_id`, que es `UNIQUE`: una transacción se reversa una sola vez. La consulta `find_reversal_of` se hace con las cuentas ya bloqueadas.
-- `find_by_ids_for_update` bloquea las cuentas (`SELECT ... FOR UPDATE`, ordenado por id) y `balance` se calcula después, en la misma sesión. El bloqueo se libera con el commit de `save_transaction` o con `close`.
+- `find_by_ids_for_update` bloquea las cuentas (`SELECT ... FOR UPDATE`, ordenado por id) y `balance` se calcula después, en la misma sesión. Solo bloquea NOSTRO y VOSTRO: la contrapartida no se mueve sin su cuenta. Por eso el reverso le pasa los ids de todos los movimientos y recibe solo las cuentas. El bloqueo se libera con el commit de `save_transaction` o con `close`.
 - Cuenta inexistente, monto inválido y fondos insuficientes son `ValueError` (400); la falta de permiso es `PermissionDenied` (403).
 
 ## Autenticación y autorización
@@ -160,7 +161,7 @@ Semilla fija de roles (`create_admin.py`, §9):
 
 Tablas: `users`, `roles`, `permissions`, `role_permissions`, `accounts`, `transactions`, `movements`. Las claves primarias son UUID.
 
-Vista `account_history` (`CREATE_ACCOUNT_HISTORY` en `src/account/domain_model.py`): una fila por movimiento del lado `MAIN`, con el tipo de su transacción y el saldo acumulado de la cuenta, calculado en SQL con una función de ventana ordenada por `created_at`. Por eso `movements.created_at` toma `clock_timestamp()` y no `now()`: se asigna después de obtener el bloqueo de la cuenta, así que el orden por fecha es el orden en que se aplicaron los movimientos. Se lee con la tabla `account_history`, declarada en un `MetaData` aparte para que `create_all` no la cree como tabla.
+Vista `account_history` (`CREATE_ACCOUNT_HISTORY` en `src/account/domain_model.py`): una fila por movimiento de una cuenta NOSTRO o VOSTRO (sin las contrapartidas), con el tipo de su transacción y el saldo acumulado de la cuenta, calculado en SQL con una función de ventana ordenada por `created_at`. Por eso `movements.created_at` toma `clock_timestamp()` y no `now()`: se asigna después de obtener el bloqueo de la cuenta, así que el orden por fecha es el orden en que se aplicaron los movimientos. Se lee con la tabla `account_history`, declarada en un `MetaData` aparte para que `create_all` no la cree como tabla.
 
 Decisiones que cierran pendientes de §11:
 
@@ -169,6 +170,7 @@ Decisiones que cierran pendientes de §11:
 - El admin sí opera cuentas VOSTRO, por los permisos de la semilla; no hay un servicio aparte para eso.
 - Solo se desactivan usuarios (§8.14): no hay reactivación ni cambio de rol, esos casos de uso no aplican. Un admin puede desactivarse a sí mismo si queda otro activo, y las cuentas de un cliente desactivado se conservan.
 - Un reverso es una transacción de tipo `REVERSAL` que referencia a la original (§8.15). Es total, único por transacción y no se puede reversar; si deja una cuenta en negativo se rechaza (§6). En el historial aparece como un movimiento más, con tipo `REVERSAL`.
+- Cada cuenta NOSTRO o VOSTRO (pasivo, naturaleza acreedora: créditos − débitos) tiene su cuenta de contrapartida (activo, naturaleza deudora: débitos − créditos), una fila de clase `CONTRA` en `accounts` sin titular ni alias, apuntada por `contra_account_id`. Ambas tienen siempre el mismo saldo (§6.2). Por ahora la API solo expone NOSTRO y VOSTRO: `find_by_id`, `find_all`, `find_by_ids_for_update`, `balances` y la vista excluyen `CONTRA`, y un id de contrapartida responde como cuenta inexistente.
 - La consulta de saldo devuelve el historial de movimientos con el saldo tras cada uno, sin saldo global; no hay un servicio aparte.
 
 ## Convenciones

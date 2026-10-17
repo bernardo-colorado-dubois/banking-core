@@ -206,7 +206,7 @@ sequenceDiagram
   DB-->>Repo: locked account
   Service->>Service: authorize(actor, DEPOSIT, account)
   Service->>Repo: balance
-  Repo->>DB: main-side credits − debits
+  Repo->>DB: the account's credits − debits
   Service->>Service: Transaction.deposit and validate (invariants)
   Service->>Repo: save_transaction
   Repo->>DB: INSERT of the transaction and its movements, COMMIT
@@ -231,24 +231,26 @@ Every error is returned as `{"error": "..."}`.
 
 ### Accounts
 
-There is **a single account type**, with the same rules for all. They differ only by a label:
+There is **a single account type** for holders, with the same rules for all. They differ only by a label:
 
 | Class | What it is | Holder |
 |---|---|---|
 | `VOSTRO` | A client's account | The client user |
 | `NOSTRO` | The bank's own account | The bank (`BANK_NAME`), with no holder user |
+| `CONTRA` | The contra account of a NOSTRO or VOSTRO account | None |
 
-Every account carries a required `alias`, unique per holder. Since NOSTRO accounts share a holder, the alias is also unique among them.
+Every NOSTRO and VOSTRO account carries a required `alias`, unique per holder. Since NOSTRO accounts share a holder, the alias is also unique among them.
 
-### Main side and contra
+### Account and contra account
 
-Each account has two sides in the ledger: the **main** side, which is the balance the holder sees, and the **contra**, which represents the outside of the account. The contra is not another row in `accounts`: it is the `CONTRA` side of that same account's movements, and its balance is always the opposite of the main side's.
+Each NOSTRO or VOSTRO account is opened together with its **contra account**, in the same commit, and points to it with `contra_account_id`. The account is what the bank owes its holder (liability); the contra account is the money the bank holds for it (asset). Contra accounts have no holder or alias and are not reached through the API: they are not listed, and their id is answered as a nonexistent account.
 
 ```
-balance = credits − debits on the MAIN side
+account balance        = credits − debits
+contra account balance = debits − credits
 ```
 
-The main side has a **credit nature**: a credit increases it and a debit decreases it. The contra has the debit nature. That is why a deposit shows up in the account's history as `CREDIT` and a withdrawal as `DEBIT`.
+The account has a **credit nature**: a credit increases it and a debit decreases it. The contra account has the debit nature, so both always have the same balance: assets = liabilities. That is why a deposit shows up in the account's history as `CREDIT` and a withdrawal as `DEBIT`.
 
 ### Operations
 
@@ -256,10 +258,10 @@ Each operation is an atomic transaction: either all of its movements are recorde
 
 | Operation | Debit | Credit | Movements |
 |---|---|---|---|
-| **Deposit** to A | Contra A | Main A | 2 |
-| **Withdrawal** from A | Main A | Contra A | 2 |
-| **Transfer** A → B | Main A | Contra A | 4 |
-| | Contra B | Main B | |
+| **Deposit** to A | Contra A | A | 2 |
+| **Withdrawal** from A | A | Contra A | 2 |
+| **Transfer** A → B | A | Contra A | 4 |
+| | Contra B | B | |
 
 A withdrawal and an outgoing transfer leave identical movements in the account's ledger; they are told apart by the transaction's `type` (`DEPOSIT`, `WITHDRAWAL`, `TRANSFER`).
 
@@ -269,11 +271,11 @@ Movements are **immutable**: they are never edited or deleted. Their amount is a
 
 ### Invariants
 
-`Transaction.validate(balances)` applies them before saving any transaction (§6):
+`Transaction.validate(accounts, balances)` applies them before saving any transaction (§6):
 
 1. **Transaction balance:** the sum of debits equals the sum of credits.
-2. **Per-account balance:** in each account, main + contra = 0.
-3. **No negative balances:** no main side ends up negative. Withdrawals and transfers without funds are rejected.
+2. **Per-account balance:** each account's balance equals its contra account's (assets = liabilities).
+3. **No negative balances:** no NOSTRO or VOSTRO account ends up negative. Withdrawals and transfers without funds are rejected.
 4. **Positive amounts:** every movement has an amount greater than zero.
 5. **Transfers:** source and destination are different accounts.
 
@@ -499,9 +501,9 @@ This is how an operation is put together:
 amount = parse_amount(amount)                               # validates before opening the DB transaction
 accounts = repository.find_by_ids_for_update([account_id])  # SELECT ... FOR UPDATE
 authorize(actor, Action.DEPOSIT, account)                   # (action, scope) permission
-balance = repository.balance(account.id)                    # main-side credits − debits
-transaction = Transaction.deposit(account.id, amount)       # builds the movements
-transaction.validate({account.id: balance})                 # invariants
+balance = repository.balance(account.id)                    # the account's credits − debits
+transaction = Transaction.deposit(account, amount)          # builds the movements on the account and its contra account
+transaction.validate([account], {account.id: balance})      # invariants
 repository.save_transaction(transaction)                    # a single commit, releases the lock
 ```
 
@@ -528,15 +530,15 @@ roles ──< role_permissions >── permissions
 
 | Table | Columns | Constraints |
 |---|---|---|
-| `accounts` | `id`, `account_class`, `alias`, `holder_id`, `created_at` | VOSTRO requires a holder and NOSTRO forbids it. `UNIQUE NULLS NOT DISTINCT (holder_id, alias)` |
+| `accounts` | `id`, `account_class`, `alias`, `holder_id`, `contra_account_id`, `created_at` | VOSTRO requires a holder; NOSTRO and CONTRA forbid it. NOSTRO and VOSTRO require `alias` and `contra_account_id`, CONTRA has neither. Unique index `(holder_id, alias) NULLS NOT DISTINCT` that leaves out CONTRA |
 | `transactions` | `id`, `type`, `original_transaction_id`, `description`, `created_at` | `original_transaction_id` is unique and only reversals have it |
-| `movements` | `id`, `transaction_id`, `account_id`, `side`, `entry_type`, `amount`, `created_at` | `amount > 0`. `created_at` takes `clock_timestamp()` |
+| `movements` | `id`, `transaction_id`, `account_id`, `entry_type`, `amount`, `created_at` | `amount > 0`. `created_at` takes `clock_timestamp()` |
 
 No table has a balance column.
 
 ### `account_history` view
 
-It has one row per `MAIN`-side movement, with its transaction's type and the account's running balance, computed with a window function:
+It has one row per movement of a NOSTRO or VOSTRO account (contra accounts are left out), with its transaction's type and the account's running balance, computed with a window function:
 
 ```sql
 CREATE OR REPLACE VIEW account_history AS
@@ -552,7 +554,8 @@ SELECT
   m.created_at
 FROM movements m
 JOIN transactions t ON t.id = m.transaction_id
-WHERE m.side = 'MAIN'
+JOIN accounts a ON a.id = m.account_id
+WHERE a.account_class <> 'CONTRA'
 ```
 
 It is defined in `src/account/domain_model.py` and is created and dropped together with the tables. It can also be queried directly from SQL:

@@ -210,7 +210,7 @@
         <div class="row"><div>Withdrawal</div><div><span class="pill db">DEBIT</span></div><div class="mono a">−250.50</div><div class="mono">749.50</div></div>
         <div class="row"><div>Transfer</div><div><span class="pill db">DEBIT</span></div><div class="mono a">−100.00</div><div class="mono">649.50</div></div>
         <div class="row"><div>Reversal</div><div><span class="pill cr">CREDIT</span></div><div class="mono g">+100.00</div><div class="mono">749.50</div></div>
-        <div class="formula mono"><b>balance</b> = credits − debits on the main side</div>
+        <div class="formula mono"><b>balance</b> = credits − debits</div>
       </div>
     </div>
   </div>
@@ -241,42 +241,42 @@
   <section id="model">
     <div class="wrap">
       <div class="eyebrow">ACCOUNTING MODEL</div>
-      <h2>Every account balances <em>with itself</em></h2>
-      <p class="intro">Every account has two sides in the ledger: the <b>main</b> side, which is the balance the holder sees, and the <b>contra</b>, which represents the outside. The main side has a credit nature: a credit increases it and a debit decreases it.</p>
+      <h2>Every account balances <em>with its contra account</em></h2>
+      <p class="intro">Every account is opened with its <b>contra account</b>. The account is what the bank owes its holder, a liability with a credit nature: a credit increases it and a debit decreases it. The contra account is the money the bank holds for it, an asset with a debit nature. Both always have the same balance.</p>
 
       <div class="cap">Transfer of 100.00 from A to B <span>4 movements · 1 atomic transaction</span></div>
       <div class="pair">
         <div class="card acct">
           <div class="hd">Account A <span>· source</span></div>
-          <div class="side"><div><div class="nm">MAIN</div><span class="pill db">DEBIT</span></div><div class="v mono a">−100.00</div></div>
-          <div class="side"><div><div class="nm">CONTRA</div><span class="pill cr">CREDIT</span></div><div class="v mono g">+100.00</div></div>
-          <div class="zero mono">main + contra = 0</div>
+          <div class="side"><div><div class="nm">ACCOUNT · LIABILITY</div><span class="pill db">DEBIT</span></div><div class="v mono a">−100.00</div></div>
+          <div class="side"><div><div class="nm">CONTRA ACCOUNT · ASSET</div><span class="pill cr">CREDIT</span></div><div class="v mono a">−100.00</div></div>
+          <div class="zero mono">assets = liabilities</div>
         </div>
         <div class="arrow">→</div>
         <div class="card acct">
           <div class="hd">Account B <span>· destination</span></div>
-          <div class="side"><div><div class="nm">MAIN</div><span class="pill cr">CREDIT</span></div><div class="v mono g">+100.00</div></div>
-          <div class="side"><div><div class="nm">CONTRA</div><span class="pill db">DEBIT</span></div><div class="v mono a">−100.00</div></div>
-          <div class="zero mono">main + contra = 0</div>
+          <div class="side"><div><div class="nm">ACCOUNT · LIABILITY</div><span class="pill cr">CREDIT</span></div><div class="v mono g">+100.00</div></div>
+          <div class="side"><div><div class="nm">CONTRA ACCOUNT · ASSET</div><span class="pill db">DEBIT</span></div><div class="v mono g">+100.00</div></div>
+          <div class="zero mono">assets = liabilities</div>
         </div>
       </div>
 
       <div class="grid3" style="margin-top:16px">
         <div class="card op"><h3>Deposit <span>2 movements</span></h3>
-          <div><span class="pill cr">CREDIT</span> to the main side</div>
-          <div><span class="pill db">DEBIT</span> to the contra</div></div>
+          <div><span class="pill cr">CREDIT</span> to the account</div>
+          <div><span class="pill db">DEBIT</span> to the contra account</div></div>
         <div class="card op"><h3>Withdrawal <span>2 movements</span></h3>
-          <div><span class="pill db">DEBIT</span> to the main side</div>
-          <div><span class="pill cr">CREDIT</span> to the contra</div></div>
+          <div><span class="pill db">DEBIT</span> to the account</div>
+          <div><span class="pill cr">CREDIT</span> to the contra account</div></div>
         <div class="card op"><h3>Reversal <span>2 or 4 movements</span></h3>
           <div><span class="pill cr">CREDIT</span> where the original debited</div>
           <div><span class="pill db">DEBIT</span> where the original credited</div></div>
       </div>
-      <p class="intro" style="margin-top:16px">A reversal never edits or deletes the original: it is a new transaction with the same movements and the opposite entry type, so it balances on its own and every account still ends with main + contra = 0. It is rejected if it would leave a main side negative.</p>
+      <p class="intro" style="margin-top:16px">A reversal never edits or deletes the original: it is a new transaction with the same movements and the opposite entry type, so it balances on its own and every account still matches its contra account. It is rejected if it would leave an account negative.</p>
 
       <ul class="card inv">
         <li><span class="n">1</span><span><b>Transaction balance:</b> the sum of debits equals the sum of credits.</span></li>
-        <li><span class="n">2</span><span><b>Per-account balance:</b> in each account, main + contra = 0.</span></li>
+        <li><span class="n">2</span><span><b>Per-account balance:</b> each account matches its contra account, assets = liabilities.</span></li>
         <li><span class="n">3</span><span><b>No negative balances:</b> withdrawals and transfers without funds are rejected.</span></li>
         <li><span class="n">4</span><span><b>Positive amounts:</b> the direction is given by the entry type, debit or credit.</span></li>
         <li><span class="n">5</span><span><b>Transfers:</b> source and destination are different accounts.</span></li>

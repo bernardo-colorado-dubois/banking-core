@@ -17,7 +17,7 @@ class AccountDetail:
 
 @dataclass(frozen=True)
 class AccountSummary(AccountDetail):
-  # Current main-side balance (§4.3)
+  # Current balance (§4.3)
   balance: Decimal
 
 @dataclass(frozen=True)
@@ -27,7 +27,7 @@ class AccountMovement:
   type: TransactionType
   entry_type: EntryType
   amount: Decimal
-  # Main-side balance after this movement
+  # The account's balance after this movement
   balance: Decimal
   created_at: datetime
 
@@ -47,7 +47,7 @@ class OperationResult:
   account_id: UUID
   # Only in transfers
   destination_account_id: UUID | None
-  # Main-side balance of `account_id` after the operation
+  # Balance of `account_id` after the operation
   balance: Decimal
   created_at: datetime
 
@@ -57,6 +57,6 @@ class ReversalResult:
   original_transaction_id: UUID
   original_type: TransactionType
   amount: Decimal
-  # Main-side balance of each account of the original transaction after the reversal
+  # Balance of each account of the original transaction after the reversal
   balances: dict[UUID, Decimal]
   created_at: datetime
