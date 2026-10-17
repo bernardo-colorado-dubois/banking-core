@@ -1,6 +1,6 @@
 from src.main.database import Base
 from src.user.domain_model import User, Scope
-from sqlalchemy import CheckConstraint, Column, DateTime, ForeignKey, Index, MetaData, Numeric, Table, Uuid
+from sqlalchemy import CheckConstraint, Column, DateTime, ForeignKey, MetaData, Numeric, Table, UniqueConstraint, Uuid
 from sqlalchemy import DDL, Enum as SqlEnum, Row, case, event, func, select
 from sqlalchemy.orm import Mapped, mapped_column, relationship, joinedload, Session
 from datetime import datetime
@@ -9,12 +9,15 @@ from enum import Enum
 from typing import List
 from uuid import UUID, uuid4
 
-# §4.1 NOSTRO and VOSTRO only tell the holder apart; CONTRA is the asset
-# that mirrors each of them (§4.2)
+# §4.1 The label does not change the accounting behavior
 class AccountClass(Enum):
   NOSTRO = "NOSTRO"   # the bank's own account
   VOSTRO = "VOSTRO"   # client account
-  CONTRA = "CONTRA"   # contra account of a NOSTRO or VOSTRO account
+
+# §4.2 The nature of each of a ledger's two accounts
+class Nature(Enum):
+  CREDIT = "CREDIT"   # what the bank owes the holder (liability)
+  DEBIT = "DEBIT"     # the money the bank holds for it (asset)
 
 # §5 Tells a withdrawal apart from an outgoing transfer
 class TransactionType(Enum):
@@ -27,49 +30,60 @@ class EntryType(Enum):
   DEBIT = "DEBIT"
   CREDIT = "CREDIT"
 
-class Account(Base):
+# §4.2 What the API calls an account: a credit account and a debit account
+# that always balance with each other
+class Ledger(Base):
 
-  __tablename__ = 'accounts'
+  __tablename__ = 'ledgers'
   __table_args__ = (
     CheckConstraint(
-      "(account_class = 'VOSTRO' AND holder_id IS NOT NULL) OR (account_class IN ('NOSTRO', 'CONTRA') AND holder_id IS NULL)",
+      "(account_class = 'VOSTRO' AND holder_id IS NOT NULL) OR (account_class = 'NOSTRO' AND holder_id IS NULL)",
       name='holder_by_class',
     ),
-    # A contra account has no alias and no contra of its own (§4.2)
-    CheckConstraint(
-      "(account_class = 'CONTRA') = (alias IS NULL AND contra_account_id IS NULL)",
-      name='contra_by_class',
-    ),
-    # The alias tells apart the accounts of the same holder; with a null holder
-    # it covers the NOSTRO accounts among themselves. Contra accounts are left out
-    Index(
-      'accounts_holder_id_alias_key', 'holder_id', 'alias',
-      unique=True,
-      postgresql_nulls_not_distinct=True,
-      postgresql_where="account_class <> 'CONTRA'",
-    ),
+    # The alias tells apart the ledgers of the same holder; with a null holder
+    # it covers the NOSTRO ledgers among themselves
+    UniqueConstraint('holder_id', 'alias', postgresql_nulls_not_distinct=True),
   )
 
   id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
   account_class: Mapped[AccountClass] = mapped_column(nullable=False)
-  alias: Mapped[str | None] = mapped_column(nullable=True)
+  alias: Mapped[str] = mapped_column(nullable=False)
   holder_id: Mapped[UUID | None] = mapped_column(ForeignKey('users.id'), nullable=True)
-  # §4.2 Created together with the account, in the same commit
-  contra_account_id: Mapped[UUID | None] = mapped_column(ForeignKey('accounts.id'), unique=True, nullable=True)
   created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
   holder: Mapped[User | None] = relationship()
-  contra: Mapped["Account | None"] = relationship(remote_side=[id])
+  accounts: Mapped[List["Account"]] = relationship(back_populates='ledger', lazy='selectin')
 
-  # §4.2 Every NOSTRO or VOSTRO account is opened with its contra account
+  # §4.2 A ledger is always opened with its two accounts, in the same commit
   @classmethod
-  def open(cls,account_class:AccountClass,alias:str,**holder)->"Account":
-    return cls(account_class=account_class, alias=alias, contra=cls(account_class=AccountClass.CONTRA), **holder)
+  def open(cls,account_class:AccountClass,alias:str,**holder)->"Ledger":
+    return cls(
+      account_class=account_class,
+      alias=alias,
+      accounts=[Account(nature=Nature.CREDIT), Account(nature=Nature.DEBIT)],
+      **holder
+    )
 
-  # §7 Evaluation: the account's scope relative to the authenticated user
+  def account(self,nature:Nature)->"Account":
+    return next(account for account in self.accounts if account.nature == nature)
+
+  # §7 Evaluation: the ledger's scope relative to the authenticated user
   def scope_for(self,user_id:UUID)->Scope:
     if self.account_class == AccountClass.NOSTRO:
       return Scope.NOSTRO
     return Scope.OWN if self.holder_id == user_id else Scope.VOSTRO
+
+class Account(Base):
+
+  __tablename__ = 'accounts'
+  __table_args__ = (
+    # One account of each nature per ledger (§4.2)
+    UniqueConstraint('ledger_id', 'nature'),
+  )
+
+  id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+  ledger_id: Mapped[UUID] = mapped_column(ForeignKey('ledgers.id'), nullable=False)
+  nature: Mapped[Nature] = mapped_column(nullable=False)
+  ledger: Mapped[Ledger] = relationship(back_populates='accounts')
 
 class Transaction(Base):
 
@@ -92,16 +106,16 @@ class Transaction(Base):
 
   # §5 Each operation builds its movements; a balance is never touched directly
   @classmethod
-  def deposit(cls,account:Account,amount:Decimal)->"Transaction":
-    return cls(type=TransactionType.DEPOSIT, movements=inflow(account, amount))
+  def deposit(cls,ledger:Ledger,amount:Decimal)->"Transaction":
+    return cls(type=TransactionType.DEPOSIT, movements=inflow(ledger, amount))
 
   @classmethod
-  def withdrawal(cls,account:Account,amount:Decimal)->"Transaction":
-    return cls(type=TransactionType.WITHDRAWAL, movements=outflow(account, amount))
+  def withdrawal(cls,ledger:Ledger,amount:Decimal)->"Transaction":
+    return cls(type=TransactionType.WITHDRAWAL, movements=outflow(ledger, amount))
 
-  # Each account goes through its own contra account: 4 movements
+  # Each ledger goes through its own two accounts: 4 movements
   @classmethod
-  def transfer(cls,source:Account,destination:Account,amount:Decimal)->"Transaction":
+  def transfer(cls,source:Ledger,destination:Ledger,amount:Decimal)->"Transaction":
     return cls(
       type=TransactionType.TRANSFER,
       movements=outflow(source, amount) + inflow(destination, amount)
@@ -124,38 +138,41 @@ class Transaction(Base):
       ]
     )
 
-  def validate(self,accounts:List[Account],balances:dict[UUID,Decimal])->None:
-    """§6 invariants. `accounts` are the involved NOSTRO and VOSTRO accounts and
-    `balances` holds the current balance of each one."""
+  def validate(self,ledgers:List[Ledger],balances:dict[UUID,Decimal])->None:
+    """§6 invariants. `ledgers` are the involved ledgers and `balances` holds
+    the current balance of each one."""
     # 4. Positive amounts
     if any(movement.amount <= 0 for movement in self.movements):
       raise ValueError('The amount must be greater than zero')
 
     # 5. In a transfer, source and destination are different
-    if self.type == TransactionType.TRANSFER and len({account.id for account in accounts}) != 2:
+    if self.type == TransactionType.TRANSFER and len({ledger.id for ledger in ledgers}) != 2:
       raise ValueError('The source and destination accounts must be different')
 
     # 1. Transaction balance: debits = credits
     if sum(movement.signed_amount for movement in self.movements) != 0:
       raise ValueError('The transaction is not balanced')
 
-    # Every movement belongs to one of the accounts or to its contra account
-    ids = {account.id for account in accounts} | {account.contra_account_id for account in accounts}
+    # Every movement belongs to one of the ledgers' accounts
+    ids = {account.id for ledger in ledgers for account in ledger.accounts}
     if any(movement.account_id not in ids for movement in self.movements):
       raise ValueError('The transaction has movements outside its accounts')
 
-    for account in accounts:
-      change = self.change(account.id)
-      # 2. Per-account balance: assets = liabilities. The contra account has the
-      # debit nature, so it changes by credits − debits with the opposite sign
-      if change != -self.change(account.contra_account_id):
-        raise ValueError('The account does not match its contra account')
+    for ledger in ledgers:
+      change = self.change(ledger)
+      # 2. Per-ledger balance: assets = liabilities. The debit account changes
+      # by debits − credits, the opposite of credits − debits
+      if change != -self.signed_change(ledger.account(Nature.DEBIT).id):
+        raise ValueError('The ledger is not balanced')
       # 3. No negative balances
-      if balances[account.id] + change < 0:
+      if balances[ledger.id] + change < 0:
         raise ValueError('Insufficient funds')
 
-  # §4.3 Change in a NOSTRO or VOSTRO account's balance: credits − debits
-  def change(self,account_id:UUID)->Decimal:
+  # §4.3 Change in a ledger's balance: credits − debits on its credit account
+  def change(self,ledger:Ledger)->Decimal:
+    return self.signed_change(ledger.account(Nature.CREDIT).id)
+
+  def signed_change(self,account_id:UUID)->Decimal:
     return sum(
       (movement.signed_amount for movement in self.movements if movement.account_id == account_id),
       Decimal(0)
@@ -175,59 +192,59 @@ class Movement(Base):
   entry_type: Mapped[EntryType] = mapped_column(nullable=False)
   amount: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
   # clock_timestamp() and not now(): now() is the time the DB transaction started,
-  # before acquiring the account lock (§10). With the actual insert time,
-  # an account's movements stay in the order in which they were applied
+  # before acquiring the ledger lock (§10). With the actual insert time,
+  # a ledger's movements stay in the order in which they were applied
   created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.clock_timestamp(), nullable=False)
   transaction: Mapped[Transaction] = relationship(back_populates='movements')
 
-  # §4.3 balance = credits − debits
+  # §4.3 credits − debits
   @property
   def signed_amount(self)->Decimal:
     return self.amount if self.entry_type == EntryType.CREDIT else -self.amount
 
-# Money comes into the account: debit to the contra account, credit to the account (§5)
-def inflow(account:Account,amount:Decimal)->List[Movement]:
+# Money comes into the ledger: debit to its debit account, credit to its credit account (§5)
+def inflow(ledger:Ledger,amount:Decimal)->List[Movement]:
   return [
-    Movement(account_id=account.contra_account_id, entry_type=EntryType.DEBIT, amount=amount),
-    Movement(account_id=account.id, entry_type=EntryType.CREDIT, amount=amount),
+    Movement(account_id=ledger.account(Nature.DEBIT).id, entry_type=EntryType.DEBIT, amount=amount),
+    Movement(account_id=ledger.account(Nature.CREDIT).id, entry_type=EntryType.CREDIT, amount=amount),
   ]
 
-# Money leaves the account: debit to the account, credit to the contra account (§5)
-def outflow(account:Account,amount:Decimal)->List[Movement]:
+# Money leaves the ledger: debit to its credit account, credit to its debit account (§5)
+def outflow(ledger:Ledger,amount:Decimal)->List[Movement]:
   return [
-    Movement(account_id=account.id, entry_type=EntryType.DEBIT, amount=amount),
-    Movement(account_id=account.contra_account_id, entry_type=EntryType.CREDIT, amount=amount),
+    Movement(account_id=ledger.account(Nature.CREDIT).id, entry_type=EntryType.DEBIT, amount=amount),
+    Movement(account_id=ledger.account(Nature.DEBIT).id, entry_type=EntryType.CREDIT, amount=amount),
   ]
 
-# A NOSTRO or VOSTRO account's history: each movement with the balance it left.
+# A ledger's history: each movement of its credit account with the balance it left.
 # The running balance is computed in SQL (§4.3: credits − debits), not in Python
-CREATE_ACCOUNT_HISTORY = """
-CREATE OR REPLACE VIEW account_history AS
+CREATE_LEDGER_HISTORY = """
+CREATE OR REPLACE VIEW ledger_history AS
 SELECT
   m.id AS movement_id,
-  m.account_id,
+  a.ledger_id,
   m.transaction_id,
   t.type,
   m.entry_type,
   m.amount,
   SUM(CASE WHEN m.entry_type = 'CREDIT' THEN m.amount ELSE -m.amount END)
-    OVER (PARTITION BY m.account_id ORDER BY m.created_at, m.id) AS balance,
+    OVER (PARTITION BY a.ledger_id ORDER BY m.created_at, m.id) AS balance,
   m.created_at
 FROM movements m
 JOIN transactions t ON t.id = m.transaction_id
 JOIN accounts a ON a.id = m.account_id
-WHERE a.account_class <> 'CONTRA'
+WHERE a.nature = 'CREDIT'
 """
 
 # The view is created and dropped together with the tables (create_all and drop_all)
-event.listen(Base.metadata, 'after_create', DDL(CREATE_ACCOUNT_HISTORY))
-event.listen(Base.metadata, 'before_drop', DDL('DROP VIEW IF EXISTS account_history'))
+event.listen(Base.metadata, 'after_create', DDL(CREATE_LEDGER_HISTORY))
+event.listen(Base.metadata, 'before_drop', DDL('DROP VIEW IF EXISTS ledger_history'))
 
 # Lives in a separate MetaData so create_all does not create it as a table
-account_history = Table(
-  'account_history', MetaData(),
+ledger_history = Table(
+  'ledger_history', MetaData(),
   Column('movement_id', Uuid, primary_key=True),
-  Column('account_id', Uuid),
+  Column('ledger_id', Uuid),
   Column('transaction_id', Uuid),
   Column('type', SqlEnum(TransactionType)),
   Column('entry_type', SqlEnum(EntryType)),
@@ -236,63 +253,62 @@ account_history = Table(
   Column('created_at', DateTime(timezone=True)),
 )
 
-class AccountRepository:
+class LedgerRepository:
 
   def __init__(self,session:Session) -> None:
     self.session = session
 
-  # Contra accounts are not reached through the API (§4.2): every lookup by id leaves them out
-  def find_by_id(self,id:UUID)->Account|None:
-    return self.session.query(Account).filter(
-      Account.id==id,
-      Account.account_class!=AccountClass.CONTRA
-    ).one_or_none()
+  def find_by_id(self,id:UUID)->Ledger|None:
+    return self.session.query(Ledger).filter(Ledger.id==id).one_or_none()
 
   # Oldest to newest, with the holder already loaded
-  def find_all(self)->List[Account]:
-    return self.session.query(Account).options(joinedload(Account.holder)).filter(
-      Account.account_class!=AccountClass.CONTRA
-    ).order_by(Account.created_at, Account.id).all()
+  def find_all(self)->List[Ledger]:
+    return self.session.query(Ledger).options(joinedload(Ledger.holder)).order_by(Ledger.created_at, Ledger.id).all()
 
-  def find_by_holder_and_alias(self,holder_id:UUID|None,alias:str)->Account|None:
-    return self.session.query(Account).filter(
-      Account.holder_id.is_not_distinct_from(holder_id),
-      Account.alias==alias
+  def find_by_holder_and_alias(self,holder_id:UUID|None,alias:str)->Ledger|None:
+    return self.session.query(Ledger).filter(
+      Ledger.holder_id.is_not_distinct_from(holder_id),
+      Ledger.alias==alias
     ).one_or_none()
 
   # §10 Locks the rows before computing balances; ordering by id avoids deadlocks.
-  # Only NOSTRO and VOSTRO accounts are locked: a contra account never moves
-  # without its account. The lock is released by the commit in save_transaction or by close
-  def find_by_ids_for_update(self,ids:List[UUID])->List[Account]:
-    return self.session.query(Account).filter(
-      Account.id.in_(ids),
-      Account.account_class!=AccountClass.CONTRA
-    ).order_by(Account.id).with_for_update().all()
+  # The ledger's lock covers its two accounts. It is released by the commit in
+  # save_transaction or by close
+  def find_by_ids_for_update(self,ids:List[UUID])->List[Ledger]:
+    return self.session.query(Ledger).filter(Ledger.id.in_(ids)).order_by(Ledger.id).with_for_update().all()
 
-  # §4.3 The balance is not stored: credits − debits of a NOSTRO or VOSTRO account
+  # The ledgers that own the given accounts, locked as in find_by_ids_for_update
+  def find_by_account_ids_for_update(self,account_ids:List[UUID])->List[Ledger]:
+    ledger_ids = select(Account.ledger_id).where(Account.id.in_(account_ids))
+    return self.session.query(Ledger).filter(Ledger.id.in_(ledger_ids)).order_by(Ledger.id).with_for_update().all()
+
+  # §4.3 The balance is not stored: credits − debits on the ledger's credit account
   def balance(self,id:UUID)->Decimal:
     signed_amount = case((Movement.entry_type==EntryType.CREDIT, Movement.amount), else_=-Movement.amount)
-    balance = self.session.query(func.coalesce(func.sum(signed_amount), 0)).filter(
-      Movement.account_id==id
+    balance = self.session.query(func.coalesce(func.sum(signed_amount), 0)).join(
+      Account, Account.id==Movement.account_id
+    ).filter(
+      Account.ledger_id==id,
+      Account.nature==Nature.CREDIT
     ).scalar()
     return Decimal(balance).quantize(Decimal('0.01'))
 
-  # Balance of every NOSTRO and VOSTRO account in a single query; accounts without movements are missing
+  # Balance of every ledger in a single query; ledgers without movements are missing
   def balances(self)->dict[UUID,Decimal]:
     signed_amount = case((Movement.entry_type==EntryType.CREDIT, Movement.amount), else_=-Movement.amount)
-    rows = self.session.query(Movement.account_id, func.sum(signed_amount)).join(
+    rows = self.session.query(Account.ledger_id, func.sum(signed_amount)).join(
       Account, Account.id==Movement.account_id
     ).filter(
-      Account.account_class!=AccountClass.CONTRA
-    ).group_by(Movement.account_id).all()
-    return {account_id: Decimal(balance).quantize(Decimal('0.01')) for account_id, balance in rows}
+      Account.nature==Nature.CREDIT
+    ).group_by(Account.ledger_id).all()
+    return {ledger_id: Decimal(balance).quantize(Decimal('0.01')) for ledger_id, balance in rows}
 
   # Oldest movement to newest; the balance on the last row is the current one
   def history(self,id:UUID)->List[Row]:
     return self.session.execute(
-      select(account_history)
-        .where(account_history.c.account_id==id)
-        .order_by(account_history.c.created_at, account_history.c.movement_id)
+      select(ledger_history)
+        .where(ledger_history.c.ledger_id==id)
+        .order_by(ledger_history.c.created_at, ledger_history.c.movement_id)
     ).all()
 
   def find_transaction_by_id(self,id:UUID)->Transaction|None:
@@ -315,11 +331,11 @@ class AccountRepository:
     finally:
       self.session.close()
 
-  # A new holder and the contra account are saved in cascade, in the same
-  # transaction as the account (§4.2, §8.3)
-  def save(self,account:Account)->None:
+  # A new holder and the ledger's two accounts are saved in cascade, in the
+  # same transaction as the ledger (§4.2, §8.3)
+  def save(self,ledger:Ledger)->None:
     try:
-      self.session.add(account)
+      self.session.add(ledger)
       self.session.commit()
     except:
       self.session.rollback()

@@ -1,7 +1,7 @@
 from decimal import Decimal, InvalidOperation
 from uuid import UUID
 
-from src.account.domain_model import Account, AccountRepository, AccountClass, TransactionType, Transaction
+from src.account.domain_model import Ledger, LedgerRepository, AccountClass, TransactionType, Transaction
 from src.account.dto import AccountDetail, AccountSummary, AccountBalance, AccountMovement, OperationResult, ReversalResult
 from src.user.domain_model import User, UserRepository, RoleRepository, Action, Scope
 from src.user.dto import UserCreate, AuthenticatedUser
@@ -11,7 +11,7 @@ from src.main.utils import hash_password
 class ClientSignup:
   """Client signup with their first VOSTRO account (§8.3)."""
 
-  def __init__(self,repository:AccountRepository,user_repository:UserRepository,role_repository:RoleRepository) -> None:
+  def __init__(self,repository:LedgerRepository,user_repository:UserRepository,role_repository:RoleRepository) -> None:
     self.repository = repository
     self.user_repository = user_repository
     self.role_repository = role_repository
@@ -38,17 +38,17 @@ class ClientSignup:
         active=dto.active,
         must_change_password=dto.must_change_password
       )
-      # User, account and contra account go in a single commit: all are created or none is
-      account = Account.open(AccountClass.VOSTRO, alias, holder=user)
-      self.repository.save(account)
+      # User, ledger and its two accounts go in a single commit: all are created or none is
+      ledger = Ledger.open(AccountClass.VOSTRO, alias, holder=user)
+      self.repository.save(ledger)
 
       return AccountDetail(
-        id=account.id,
-        account_class=account.account_class,
-        alias=account.alias,
+        id=ledger.id,
+        account_class=ledger.account_class,
+        alias=ledger.alias,
         holder=user.name,
         holder_id=user.id,
-        created_at=account.created_at
+        created_at=ledger.created_at
       )
     finally:
       self.repository.close()
@@ -58,7 +58,7 @@ class ClientSignup:
 class VostroAccountOpener:
   """Additional VOSTRO account for an existing client (§8.4)."""
 
-  def __init__(self,repository:AccountRepository,user_repository:UserRepository) -> None:
+  def __init__(self,repository:LedgerRepository,user_repository:UserRepository) -> None:
     self.repository = repository
     self.user_repository = user_repository
 
@@ -81,16 +81,16 @@ class VostroAccountOpener:
       if self.repository.find_by_holder_and_alias(user.id, alias) is not None:
         raise ValueError(f'The client already has an account with the alias {alias}')
 
-      account = Account.open(AccountClass.VOSTRO, alias, holder_id=user.id)
-      self.repository.save(account)
+      ledger = Ledger.open(AccountClass.VOSTRO, alias, holder_id=user.id)
+      self.repository.save(ledger)
 
       return AccountDetail(
-        id=account.id,
-        account_class=account.account_class,
-        alias=account.alias,
+        id=ledger.id,
+        account_class=ledger.account_class,
+        alias=ledger.alias,
         holder=user.name,
         holder_id=user.id,
-        created_at=account.created_at
+        created_at=ledger.created_at
       )
     finally:
       self.repository.close()
@@ -99,7 +99,7 @@ class VostroAccountOpener:
 class NostroAccountOpener:
   """NOSTRO account opening (§8.13)."""
 
-  def __init__(self,repository:AccountRepository,bank_name:str) -> None:
+  def __init__(self,repository:LedgerRepository,bank_name:str) -> None:
     self.repository = repository
     self.bank_name = bank_name
 
@@ -112,16 +112,16 @@ class NostroAccountOpener:
         raise ValueError(f'A bank account with the alias {alias} already exists')
 
       # No holder user: the holder is the bank's name (§7)
-      account = Account.open(AccountClass.NOSTRO, alias, holder_id=None)
-      self.repository.save(account)
+      ledger = Ledger.open(AccountClass.NOSTRO, alias, holder_id=None)
+      self.repository.save(ledger)
 
       return AccountDetail(
-        id=account.id,
-        account_class=account.account_class,
-        alias=account.alias,
+        id=ledger.id,
+        account_class=ledger.account_class,
+        alias=ledger.alias,
         holder=self.bank_name,
         holder_id=None,
-        created_at=account.created_at
+        created_at=ledger.created_at
       )
     finally:
       self.repository.close()
@@ -129,7 +129,7 @@ class NostroAccountOpener:
 class AccountLister:
   """List of every account with its holder and current balance (§7). Modifies nothing."""
 
-  def __init__(self,repository:AccountRepository,bank_name:str) -> None:
+  def __init__(self,repository:LedgerRepository,bank_name:str) -> None:
     self.repository = repository
     self.bank_name = bank_name
 
@@ -139,21 +139,21 @@ class AccountLister:
       raise PermissionDenied('You do not have permission to view the account list')
 
     try:
-      accounts = self.repository.find_all()
+      ledgers = self.repository.find_all()
       balances = self.repository.balances()
       return [
         AccountSummary(
-          id=account.id,
-          account_class=account.account_class,
-          alias=account.alias,
+          id=ledger.id,
+          account_class=ledger.account_class,
+          alias=ledger.alias,
           # No holder user: the holder is the bank's name (§7)
-          holder=account.holder.name if account.holder else self.bank_name,
-          holder_id=account.holder_id,
-          created_at=account.created_at,
+          holder=ledger.holder.name if ledger.holder else self.bank_name,
+          holder_id=ledger.holder_id,
+          created_at=ledger.created_at,
           # An account without movements has a zero balance
-          balance=balances.get(account.id, Decimal('0.00'))
+          balance=balances.get(ledger.id, Decimal('0.00'))
         )
-        for account in accounts
+        for ledger in ledgers
       ]
     finally:
       self.repository.close()
@@ -181,37 +181,37 @@ def parse_amount(value)->Decimal:
     raise ValueError('The amount exceeds the maximum allowed')
   return amount.quantize(Decimal('0.01'))
 
-def authorize(actor:AuthenticatedUser,action:Action,account:Account)->None:
+def authorize(actor:AuthenticatedUser,action:Action,ledger:Ledger)->None:
   """Requires the (action, scope) permission for the account's scope relative to the actor (§7)."""
-  if not actor.has_permission(action, account.scope_for(actor.id)):
+  if not actor.has_permission(action, ledger.scope_for(actor.id)):
     raise PermissionDenied('You do not have permission for this operation on the account')
 
 class AccountFunder:
   """Deposit (§8.5 and §8.10): external money comes into the account."""
 
-  def __init__(self,repository:AccountRepository) -> None:
+  def __init__(self,repository:LedgerRepository) -> None:
     self.repository = repository
 
   def invoke(self,actor:AuthenticatedUser,account_id:UUID,amount)->OperationResult:
     amount = parse_amount(amount)
     try:
       # The account is locked before computing its balance (§10)
-      accounts = self.repository.find_by_ids_for_update([account_id])
-      if not accounts:
+      ledgers = self.repository.find_by_ids_for_update([account_id])
+      if not ledgers:
         raise ValueError('The account does not exist')
-      account = accounts[0]
-      authorize(actor, Action.DEPOSIT, account)
+      ledger = ledgers[0]
+      authorize(actor, Action.DEPOSIT, ledger)
 
-      balance = self.repository.balance(account.id)
-      transaction = Transaction.deposit(account, amount)
-      transaction.validate([account], {account.id: balance})
+      balance = self.repository.balance(ledger.id)
+      transaction = Transaction.deposit(ledger, amount)
+      transaction.validate([ledger], {ledger.id: balance})
       self.repository.save_transaction(transaction)
 
       return OperationResult(
         transaction_id=transaction.id,
         type=transaction.type,
         amount=amount,
-        account_id=account.id,
+        account_id=ledger.id,
         destination_account_id=None,
         balance=balance + amount,
         created_at=transaction.created_at
@@ -222,29 +222,29 @@ class AccountFunder:
 class AccountWithdrawer:
   """Withdrawal (§8.6 and §8.11): money leaves the account to outside the bank."""
 
-  def __init__(self,repository:AccountRepository) -> None:
+  def __init__(self,repository:LedgerRepository) -> None:
     self.repository = repository
 
   def invoke(self,actor:AuthenticatedUser,account_id:UUID,amount)->OperationResult:
     amount = parse_amount(amount)
     try:
-      accounts = self.repository.find_by_ids_for_update([account_id])
-      if not accounts:
+      ledgers = self.repository.find_by_ids_for_update([account_id])
+      if not ledgers:
         raise ValueError('The account does not exist')
-      account = accounts[0]
-      authorize(actor, Action.WITHDRAW, account)
+      ledger = ledgers[0]
+      authorize(actor, Action.WITHDRAW, ledger)
 
       # Without enough funds, validate rejects the withdrawal (§6)
-      balance = self.repository.balance(account.id)
-      transaction = Transaction.withdrawal(account, amount)
-      transaction.validate([account], {account.id: balance})
+      balance = self.repository.balance(ledger.id)
+      transaction = Transaction.withdrawal(ledger, amount)
+      transaction.validate([ledger], {ledger.id: balance})
       self.repository.save_transaction(transaction)
 
       return OperationResult(
         transaction_id=transaction.id,
         type=transaction.type,
         amount=amount,
-        account_id=account.id,
+        account_id=ledger.id,
         destination_account_id=None,
         balance=balance - amount,
         created_at=transaction.created_at
@@ -255,7 +255,7 @@ class AccountWithdrawer:
 class AccountTransfer:
   """Transfer between accounts of the same bank (§8.7 and §8.12)."""
 
-  def __init__(self,repository:AccountRepository) -> None:
+  def __init__(self,repository:LedgerRepository) -> None:
     self.repository = repository
 
   def invoke(self,actor:AuthenticatedUser,source_id:UUID,destination_id:UUID,amount)->OperationResult:
@@ -265,14 +265,14 @@ class AccountTransfer:
 
     try:
       # Both accounts are always locked in the same order, by id (§10)
-      accounts = {account.id: account for account in self.repository.find_by_ids_for_update([source_id, destination_id])}
-      source = accounts.get(source_id)
+      ledgers = {ledger.id: ledger for ledger in self.repository.find_by_ids_for_update([source_id, destination_id])}
+      source = ledgers.get(source_id)
       if source is None:
         raise ValueError('The source account does not exist')
 
       # The permission is evaluated on the source account; the destination only has to exist (§7)
       authorize(actor, Action.TRANSFER, source)
-      destination = accounts.get(destination_id)
+      destination = ledgers.get(destination_id)
       if destination is None:
         raise ValueError('The destination account does not exist')
 
@@ -296,7 +296,7 @@ class AccountTransfer:
 class TransactionReverser:
   """Reversal of a deposit, a withdrawal or a transfer (§8.15)."""
 
-  def __init__(self,repository:AccountRepository) -> None:
+  def __init__(self,repository:LedgerRepository) -> None:
     self.repository = repository
 
   def invoke(self,actor:AuthenticatedUser,transaction_id:UUID)->ReversalResult:
@@ -309,34 +309,29 @@ class TransactionReverser:
       if original is None:
         raise ValueError('The transaction does not exist')
 
-      # The original's accounts are locked in id order (§10); the lock leaves out
-      # the contra accounts. Two concurrent reversals of the same transaction
-      # run one after the other
-      account_ids = list({movement.account_id for movement in original.movements})
-      accounts = self.repository.find_by_ids_for_update(account_ids)
-      for account in accounts:
-        authorize(actor, Action.REVERSE, account)
+      # The ledgers that own the original's accounts are locked in id order (§10).
+      # Two concurrent reversals of the same transaction run one after the other
+      ledgers = self.repository.find_by_account_ids_for_update([movement.account_id for movement in original.movements])
+      for ledger in ledgers:
+        authorize(actor, Action.REVERSE, ledger)
 
       if original.type == TransactionType.REVERSAL:
         raise ValueError('A reversal cannot be reversed')
 
-      # Queried with the accounts already locked
+      # Queried with the ledgers already locked
       if self.repository.find_reversal_of(original.id) is not None:
         raise ValueError('The transaction has already been reversed')
 
-      balances = {account.id: self.repository.balance(account.id) for account in accounts}
+      balances = {ledger.id: self.repository.balance(ledger.id) for ledger in ledgers}
       transaction = Transaction.reversal(original)
       # §6.3 applies as well: if the money is no longer in the account, the reversal is rejected
-      transaction.validate(accounts, balances)
+      transaction.validate(ledgers, balances)
 
       result = dict(
         original_transaction_id=original.id,
         original_type=original.type,
         amount=original.movements[0].amount,
-        balances={
-          account_id: balance + transaction.change(account_id)
-          for account_id, balance in balances.items()
-        }
+        balances={ledger.id: balances[ledger.id] + transaction.change(ledger) for ledger in ledgers}
       )
       self.repository.save_transaction(transaction)
 
@@ -347,15 +342,15 @@ class TransactionReverser:
 class AccountBalanceReader:
   """Balance inquiry with its movement history (§8.8 and §8.9). Modifies nothing."""
 
-  def __init__(self,repository:AccountRepository) -> None:
+  def __init__(self,repository:LedgerRepository) -> None:
     self.repository = repository
 
   def invoke(self,actor:AuthenticatedUser,account_id:UUID)->AccountBalance:
     try:
-      account = self.repository.find_by_id(account_id)
-      if account is None:
+      ledger = self.repository.find_by_id(account_id)
+      if ledger is None:
         raise ValueError('The account does not exist')
-      authorize(actor, Action.VIEW, account)
+      authorize(actor, Action.VIEW, ledger)
 
       movements = [
         AccountMovement(
@@ -367,12 +362,12 @@ class AccountBalanceReader:
           balance=row.balance,
           created_at=row.created_at
         )
-        for row in self.repository.history(account.id)
+        for row in self.repository.history(ledger.id)
       ]
       return AccountBalance(
-        account_id=account.id,
-        account_class=account.account_class,
-        alias=account.alias,
+        account_id=ledger.id,
+        account_class=ledger.account_class,
+        alias=ledger.alias,
         movements=movements
       )
     finally:

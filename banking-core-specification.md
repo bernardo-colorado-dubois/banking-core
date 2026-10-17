@@ -70,36 +70,41 @@ src/
 
 ### 4.1 Accounts
 
-There is **a single account type** for holders. NOSTRO and VOSTRO accounts have the same structure and the same rules, and differ only by an internal label. The third class is the contra account of each of them (§4.2):
+There is **a single account type**. All accounts have the same structure and the same rules. They differ only by an internal label:
 
 ```python
 class AccountClass(Enum):
     NOSTRO = "NOSTRO"   # the bank's own account
     VOSTRO = "VOSTRO"   # client account
-    CONTRA = "CONTRA"   # contra account of a NOSTRO or VOSTRO account
 ```
 
 The label **does not change the accounting behavior**. It only indicates whether the holder is the bank or a client.
 
-### 4.2 Fractal ledger: account and contra account
+### 4.2 Fractal ledger: credit account and debit account
 
-Each NOSTRO or VOSTRO account is itself a small double-entry ledger, made of two accounts:
+Each account is itself a small double-entry **ledger**, made of two ledger accounts, one of each nature:
 
-- **The account:** what the bank owes its holder (liability). Its balance is the one the holder sees.
-- **Its contra account:** the money the bank holds for it (asset), the accounting mirror of everything that comes into and leaves the account.
+- **Credit account:** what the bank owes the holder (liability). Its balance is the account's balance, the one the holder sees.
+- **Debit account:** the money the bank holds for it (asset), the accounting mirror of everything that comes into and leaves the account.
 
-The contra account is opened together with its account, in the same transaction, and belongs only to it. It has no holder and no alias, and it is not reached through the API: only NOSTRO and VOSTRO accounts are listed, queried and operated.
+```python
+class Nature(Enum):
+    CREDIT = "CREDIT"   # liability
+    DEBIT = "DEBIT"     # asset
+```
 
-Every operation that affects an account records a movement on it and the opposite movement on its contra account. This way, **each account balances with its contra account** and can be audited in isolation, without looking at the rest of the ledger.
+The ledger carries the class, the alias and the holder. Its two ledger accounts are opened with it, in the same transaction, and belong only to it. The API works only with ledgers: what it calls an account (`account_id`, `account_class`) is a ledger, and ledger accounts are not reached through it.
+
+Every operation that affects an account records a movement on one of its ledger accounts and the opposite movement on the other. This way, **each ledger balances with itself** and can be audited in isolation, without looking at the rest of the books.
 
 ### 4.3 Balances
 
 - Balances are **not stored**. They are always computed from the movements.
-- NOSTRO and VOSTRO accounts have the credit nature: **balance = credits − debits**.
+- The credit account has the credit nature: **balance = credits − debits**.
   - A credit increases the account's balance.
   - A debit decreases it.
-- Contra accounts have the debit nature: **balance = debits − credits**.
-- By construction, an account's balance always equals its contra account's balance: assets = liabilities.
+- The debit account has the debit nature: **balance = debits − credits**.
+- An account's balance is its credit account's balance. By construction, it always equals its debit account's balance: assets = liabilities.
 
 ### 4.4 Movements
 
@@ -114,14 +119,14 @@ Each operation is an **atomic transaction**: either all of its movements are rec
 
 | Operation | Debit | Credit |
 |---|---|---|
-| **Deposit** to A | Contra A | A |
-| **Withdrawal** from A | A | Contra A |
-| **Transfer** A → B | A | Contra A |
-| | Contra B | B |
+| **Deposit** to A | Debit account A | Credit account A |
+| **Withdrawal** from A | Credit account A | Debit account A |
+| **Transfer** A → B | Credit account A | Debit account A |
+| | Debit account B | Credit account B |
 
 - **Deposit:** external money comes into the account. 2 movements.
 - **Withdrawal:** money leaves the account to outside the bank. 2 movements.
-- **Transfer:** only between accounts of the same bank. Each account goes through its own contra account. 4 movements in a single transaction.
+- **Transfer:** only between accounts of the same bank. Each account goes through its own two ledger accounts. 4 movements in a single transaction.
 
 The operations apply equally to NOSTRO and VOSTRO accounts.
 
@@ -144,9 +149,9 @@ A **reversal** (§8.15) undoes a previous transaction with a new transaction of 
 The domain must validate these rules **before persisting** any transaction:
 
 1. **Transaction balance:** the sum of debits equals the sum of credits.
-2. **Per-account balance:** for each account, its balance equals its contra account's balance (assets = liabilities). Every movement belongs to one of the transaction's accounts or to its contra account.
+2. **Per-account balance:** in each account, the credit account's balance equals the debit account's balance (assets = liabilities). Every movement belongs to a ledger account of one of the transaction's accounts.
 3. **No negative balances:** no account, NOSTRO or VOSTRO, may end up with a negative balance. Withdrawals and transfers without sufficient funds are rejected.
-   - Contra accounts are not checked separately: their balance always equals their account's.
+   - The debit account is not checked separately: its balance always equals the credit account's.
 4. **Positive amounts:** every movement has an amount > 0.
 5. **Transfers:** the source account and the destination account must be different.
 
@@ -294,7 +299,7 @@ All signup services share these rules:
 | **Run by** | Operator (or admin) |
 | **Required permission** | `OPEN_ACCOUNT:VOSTRO` |
 | **Input** | `email`, initial password, client data |
-| **Effect** | Creates a user with role `CLIENT` and their first VOSTRO account with its contra account (§4.2), in the same transaction |
+| **Effect** | Creates a user with role `CLIENT` and their first VOSTRO account with its two ledger accounts (§4.2), in the same transaction |
 | **Rejections** | No permission; duplicate email |
 
 ### 8.4 Account opening
@@ -306,7 +311,7 @@ Additional VOSTRO account for an existing client.
 | **Run by** | Operator (or admin) |
 | **Required permission** | `OPEN_ACCOUNT:VOSTRO` |
 | **Input** | Client's `email` |
-| **Effect** | Creates a VOSTRO account with that client as holder, and its contra account (§4.2). Does not create a user |
+| **Effect** | Creates a VOSTRO account with that client as holder, with its two ledger accounts (§4.2). Does not create a user |
 | **Rejections** | No permission; nonexistent email; the user does not have role `CLIENT`; the user is inactive |
 
 ### Rules shared by the operations
@@ -326,7 +331,7 @@ They apply to deposits, withdrawals and transfers (§8.5–8.7 and §8.10–8.12
 | **Run by** | Client |
 | **Required permission** | `DEPOSIT:OWN` |
 | **Input** | `account_id`, `amount` |
-| **Effect** | `DEPOSIT` transaction: debit to the contra account, credit to the account |
+| **Effect** | `DEPOSIT` transaction: debit to the debit account, credit to the credit account |
 | **Rejections** | No permission; the account is not the client's; invalid amount |
 
 ### 8.6 Withdrawal (client)
@@ -336,7 +341,7 @@ They apply to deposits, withdrawals and transfers (§8.5–8.7 and §8.10–8.12
 | **Run by** | Client |
 | **Required permission** | `WITHDRAW:OWN` |
 | **Input** | `account_id`, `amount` |
-| **Effect** | `WITHDRAWAL` transaction: debit to the account, credit to its contra account |
+| **Effect** | `WITHDRAWAL` transaction: debit to the credit account, credit to the debit account |
 | **Rejections** | No permission; the account is not the client's; invalid amount; insufficient funds |
 
 ### 8.7 Transfer (client)
@@ -410,7 +415,7 @@ The destination can be any account of the bank, NOSTRO or VOSTRO. Since the perm
 | **Run by** | Operator (or admin) |
 | **Required permission** | `OPEN_ACCOUNT:NOSTRO` |
 | **Input** | *Pending* (see §11) |
-| **Effect** | Creates a NOSTRO account, with a null `holder_id` and a zero balance, and its contra account (§4.2). Its holder is the bank's name |
+| **Effect** | Creates a NOSTRO account, with a null `holder_id` and a zero balance, with its two ledger accounts (§4.2). Its holder is the bank's name |
 | **Rejections** | No permission |
 
 ### 8.14 User deactivation
@@ -556,22 +561,22 @@ Composite PK: `(role_id, permission_id)`.
 | `must_change_password` | boolean | default `false`; `true` for newly signed-up clients |
 | `created_at` | timestamptz | |
 
-**`accounts`**
+**`ledgers`**
+
+What the API calls an account (§4.2).
 
 | Column | Type | Notes |
 |---|---|---|
-| `id` | UUID | PK |
-| `account_class` | enum `NOSTRO` / `VOSTRO` / `CONTRA` | |
-| `alias` | text | Required if NOSTRO or VOSTRO, null if CONTRA |
-| `holder_id` | UUID | FK → `users`. Required if VOSTRO, null if NOSTRO or CONTRA |
-| `contra_account_id` | UUID | FK → `accounts`, unique. Required if NOSTRO or VOSTRO, null if CONTRA |
+| `id` | UUID | PK. It is the `account_id` of the API |
+| `account_class` | enum `NOSTRO` / `VOSTRO` | |
+| `alias` | text | required |
+| `holder_id` | UUID | FK → `users`. Required if VOSTRO, null if NOSTRO |
 | `created_at` | timestamptz | |
 
 Constraints:
 
-- `CHECK ((account_class = 'VOSTRO' AND holder_id IS NOT NULL) OR (account_class IN ('NOSTRO', 'CONTRA') AND holder_id IS NULL))`.
-- `CHECK ((account_class = 'CONTRA') = (alias IS NULL AND contra_account_id IS NULL))`.
-- Unique index `(holder_id, alias) NULLS NOT DISTINCT WHERE account_class <> 'CONTRA'`: the alias is unique per holder, and among the NOSTRO accounts.
+- `CHECK ((account_class = 'VOSTRO' AND holder_id IS NOT NULL) OR (account_class = 'NOSTRO' AND holder_id IS NULL))`.
+- `UNIQUE NULLS NOT DISTINCT (holder_id, alias)`: the alias is unique per holder, and among the NOSTRO accounts.
 
 The bank's name is not stored on each NOSTRO account: it is the same for all of them and comes from configuration.
 
@@ -591,6 +596,18 @@ The admin does not need the `OWN` permissions: they hold no accounts, and `VOSTR
 
 ### Accounting schema
 
+**`accounts`**
+
+The two ledger accounts of each ledger (§4.2).
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | UUID | PK |
+| `ledger_id` | UUID | FK → `ledgers` |
+| `nature` | enum `CREDIT` / `DEBIT` | |
+
+Constraint: `UNIQUE (ledger_id, nature)`, one ledger account of each nature per ledger.
+
 **`transactions`**
 
 | Column | Type | Notes |
@@ -607,20 +624,17 @@ The admin does not need the `OWN` permissions: they hold no accounts, and `VOSTR
 |---|---|---|
 | `id` | UUID | PK |
 | `transaction_id` | UUID | FK → `transactions` |
-| `account_id` | UUID | FK → `accounts`: a NOSTRO or VOSTRO account, or a contra account |
+| `account_id` | UUID | FK → `accounts`: a ledger account |
 | `entry_type` | enum `DEBIT` / `CREDIT` | |
 | `amount` | `NUMERIC(18,2)` | `CHECK (amount > 0)` |
 | `created_at` | timestamptz | |
-
-The contra account is a separate row in `accounts`, referenced by its account's `contra_account_id`.
 
 ## 10. Concurrency
 
 Since the balance is computed from movements, two concurrent operations on the same account could pass the funds validation at the same time. To prevent it:
 
-- Inside the DB transaction, lock the rows of the involved accounts with `SELECT ... FOR UPDATE` before computing balances.
+- Inside the DB transaction, lock the `ledgers` rows of the involved accounts with `SELECT ... FOR UPDATE` before computing balances. A ledger's lock covers its two ledger accounts, which never move without it.
 - In transfers, lock both accounts **always in the same order** (by `id`) to avoid deadlocks.
-- Only NOSTRO and VOSTRO accounts are locked: a contra account never moves without its account, so its account's lock covers it.
 
 ## 11. Pending
 

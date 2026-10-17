@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import create_engine
 
 from src.user.domain_model import UserRepository, RoleRepository
-from src.account.domain_model import AccountRepository
+from src.account.domain_model import LedgerRepository
 from src.account.application_service import ClientSignup, VostroAccountOpener, NostroAccountOpener
 from src.account.application_service import AccountFunder, AccountWithdrawer, AccountTransfer, AccountBalanceReader
 from src.account.application_service import AccountLister, TransactionReverser
@@ -43,31 +43,31 @@ class DIContainer(DeclarativeContainer):
   password_changer = Factory(PasswordChanger, repository=user_repository)
   user_deactivator = Factory(UserDeactivator, repository=user_repository)
 
-  account_repository = Factory(AccountRepository, session=session)
+  ledger_repository = Factory(LedgerRepository, session=session)
 
   client_signup = Factory(
     ClientSignup,
-    repository=account_repository,
+    repository=ledger_repository,
     user_repository=user_repository,
     role_repository=role_repository
   )
   vostro_account_opener = Factory(
     VostroAccountOpener,
-    repository=account_repository,
+    repository=ledger_repository,
     user_repository=user_repository
   )
   nostro_account_opener = Factory(
     NostroAccountOpener,
-    repository=account_repository,
+    repository=ledger_repository,
     bank_name=config.bank_name
   )
   account_lister = Factory(
     AccountLister,
-    repository=account_repository,
+    repository=ledger_repository,
     bank_name=config.bank_name
   )
-  account_funder = Factory(AccountFunder, repository=account_repository)
-  account_withdrawer = Factory(AccountWithdrawer, repository=account_repository)
-  account_transfer = Factory(AccountTransfer, repository=account_repository)
-  account_balance_reader = Factory(AccountBalanceReader, repository=account_repository)
-  transaction_reverser = Factory(TransactionReverser, repository=account_repository)
+  account_funder = Factory(AccountFunder, repository=ledger_repository)
+  account_withdrawer = Factory(AccountWithdrawer, repository=ledger_repository)
+  account_transfer = Factory(AccountTransfer, repository=ledger_repository)
+  account_balance_reader = Factory(AccountBalanceReader, repository=ledger_repository)
+  transaction_reverser = Factory(TransactionReverser, repository=ledger_repository)

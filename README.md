@@ -65,7 +65,7 @@ venv/bin/python create_admin.py
 venv/bin/python app.py
 ```
 
-> **`create_admin.py` is destructive:** it drops and recreates every table and the `account_history` view. It is the only way to create the schema.
+> **`create_admin.py` is destructive:** it drops and recreates every table and the `ledger_history` view. It is the only way to create the schema.
 
 ### Environment variables
 
@@ -191,7 +191,7 @@ sequenceDiagram
   participant Auth as @authenticated
   participant Route as deposit route
   participant Service as AccountFunder
-  participant Repo as AccountRepository
+  participant Repo as LedgerRepository
   participant DB as PostgreSQL
 
   Client->>Auth: POST /account/{id}/deposit with Bearer token
@@ -203,10 +203,10 @@ sequenceDiagram
   Service->>Service: parse_amount
   Service->>Repo: find_by_ids_for_update
   Repo->>DB: SELECT ... FOR UPDATE
-  DB-->>Repo: locked account
+  DB-->>Repo: locked ledger
   Service->>Service: authorize(actor, DEPOSIT, account)
   Service->>Repo: balance
-  Repo->>DB: the account's credits − debits
+  Repo->>DB: credits − debits on the credit account
   Service->>Service: Transaction.deposit and validate (invariants)
   Service->>Repo: save_transaction
   Repo->>DB: INSERT of the transaction and its movements, COMMIT
@@ -231,26 +231,27 @@ Every error is returned as `{"error": "..."}`.
 
 ### Accounts
 
-There is **a single account type** for holders, with the same rules for all. They differ only by a label:
+There is **a single account type**, with the same rules for all. They differ only by a label:
 
 | Class | What it is | Holder |
 |---|---|---|
 | `VOSTRO` | A client's account | The client user |
 | `NOSTRO` | The bank's own account | The bank (`BANK_NAME`), with no holder user |
-| `CONTRA` | The contra account of a NOSTRO or VOSTRO account | None |
 
-Every NOSTRO and VOSTRO account carries a required `alias`, unique per holder. Since NOSTRO accounts share a holder, the alias is also unique among them.
+Every account carries a required `alias`, unique per holder. Since NOSTRO accounts share a holder, the alias is also unique among them.
 
-### Account and contra account
+### Ledger: credit account and debit account
 
-Each NOSTRO or VOSTRO account is opened together with its **contra account**, in the same commit, and points to it with `contra_account_id`. The account is what the bank owes its holder (liability); the contra account is the money the bank holds for it (asset). Contra accounts have no holder or alias and are not reached through the API: they are not listed, and their id is answered as a nonexistent account.
+Each account is a small **ledger** (table `ledgers`) with two ledger accounts (table `accounts`), one of each nature, opened with it in the same commit:
 
-```
-account balance        = credits − debits
-contra account balance = debits − credits
-```
+| Ledger account | Nature | What it is | Balance |
+|---|---|---|---|
+| Credit account | `CREDIT` | What the bank owes the holder (liability) | credits − debits |
+| Debit account | `DEBIT` | The money the bank holds for it (asset) | debits − credits |
 
-The account has a **credit nature**: a credit increases it and a debit decreases it. The contra account has the debit nature, so both always have the same balance: assets = liabilities. That is why a deposit shows up in the account's history as `CREDIT` and a withdrawal as `DEBIT`.
+The API only works with ledgers: what it calls an account (`account_id`, `account_class`) is a ledger, and its balance is the credit account's. Ledger accounts are not reached through the API.
+
+A credit increases the account's balance and a debit decreases it; that is why a deposit shows up in the account's history as `CREDIT` and a withdrawal as `DEBIT`. Both ledger accounts always have the same balance: assets = liabilities.
 
 ### Operations
 
@@ -258,10 +259,10 @@ Each operation is an atomic transaction: either all of its movements are recorde
 
 | Operation | Debit | Credit | Movements |
 |---|---|---|---|
-| **Deposit** to A | Contra A | A | 2 |
-| **Withdrawal** from A | A | Contra A | 2 |
-| **Transfer** A → B | A | Contra A | 4 |
-| | Contra B | B | |
+| **Deposit** to A | Debit account A | Credit account A | 2 |
+| **Withdrawal** from A | Credit account A | Debit account A | 2 |
+| **Transfer** A → B | Credit account A | Debit account A | 4 |
+| | Debit account B | Credit account B | |
 
 A withdrawal and an outgoing transfer leave identical movements in the account's ledger; they are told apart by the transaction's `type` (`DEPOSIT`, `WITHDRAWAL`, `TRANSFER`).
 
@@ -271,10 +272,10 @@ Movements are **immutable**: they are never edited or deleted. Their amount is a
 
 ### Invariants
 
-`Transaction.validate(accounts, balances)` applies them before saving any transaction (§6):
+`Transaction.validate(ledgers, balances)` applies them before saving any transaction (§6):
 
 1. **Transaction balance:** the sum of debits equals the sum of credits.
-2. **Per-account balance:** each account's balance equals its contra account's (assets = liabilities).
+2. **Per-account balance:** in each ledger, the credit account's balance equals the debit account's (assets = liabilities).
 3. **No negative balances:** no NOSTRO or VOSTRO account ends up negative. Withdrawals and transfers without funds are rejected.
 4. **Positive amounts:** every movement has an amount greater than zero.
 5. **Transfers:** source and destination are different accounts.
@@ -304,7 +305,7 @@ Authorization is done **by permission, never by role**. A permission is the pair
 
 `MANAGE_USERS` has no scope.
 
-To operate an account, the service computes that account's scope relative to the user (`Account.scope_for`) and requires the matching permission:
+To operate an account, the service computes that account's scope relative to the user (`Ledger.scope_for`) and requires the matching permission:
 
 | Account | Scope |
 |---|---|
@@ -491,7 +492,7 @@ Each service is a class with a single `invoke(...)` method, registered as a `Fac
 | `AccountWithdrawer` | Withdrawal: same as the deposit, with `WITHDRAW`. Without enough funds, validation rejects it. |
 | `AccountTransfer` | Transfer: locks both accounts in id order and requires `TRANSFER` only on the source. |
 | `TransactionReverser` | Reversal: locks the original transaction's accounts, requires `REVERSE` on each one and saves a `REVERSAL` transaction with the opposite movements. Rejects a second reversal, the reversal of a reversal, and one that would leave an account negative. |
-| `AccountBalanceReader` | Requires `VIEW` and returns the history from the `account_history` view. Locks and modifies nothing. |
+| `AccountBalanceReader` | Requires `VIEW` and returns the history from the `ledger_history` view. Locks and modifies nothing. |
 
 There is **one service per operation**, not one per role: the same `AccountFunder` serves the client depositing to their account and the admin depositing to a client's or a bank's account. The difference is resolved by `authorize(actor, action, account)` with the account's scope.
 
@@ -499,11 +500,11 @@ This is how an operation is put together:
 
 ```python
 amount = parse_amount(amount)                               # validates before opening the DB transaction
-accounts = repository.find_by_ids_for_update([account_id])  # SELECT ... FOR UPDATE
-authorize(actor, Action.DEPOSIT, account)                   # (action, scope) permission
-balance = repository.balance(account.id)                    # the account's credits − debits
-transaction = Transaction.deposit(account, amount)          # builds the movements on the account and its contra account
-transaction.validate([account], {account.id: balance})      # invariants
+ledgers = repository.find_by_ids_for_update([account_id])   # SELECT ... FOR UPDATE on ledgers
+authorize(actor, Action.DEPOSIT, ledger)                    # (action, scope) permission
+balance = repository.balance(ledger.id)                     # credits − debits on the credit account
+transaction = Transaction.deposit(ledger, amount)           # builds the movements on both ledger accounts
+transaction.validate([ledger], {ledger.id: balance})        # invariants
 repository.save_transaction(transaction)                    # a single commit, releases the lock
 ```
 
@@ -514,7 +515,7 @@ Primary keys are UUIDs and dates are `timestamptz`.
 ```
 roles ──< role_permissions >── permissions
   │
-  └──< users ──< accounts ──< movements >── transactions
+  └──< users ──< ledgers ──< accounts ──< movements >── transactions
 ```
 
 ### RBAC
@@ -530,40 +531,41 @@ roles ──< role_permissions >── permissions
 
 | Table | Columns | Constraints |
 |---|---|---|
-| `accounts` | `id`, `account_class`, `alias`, `holder_id`, `contra_account_id`, `created_at` | VOSTRO requires a holder; NOSTRO and CONTRA forbid it. NOSTRO and VOSTRO require `alias` and `contra_account_id`, CONTRA has neither. Unique index `(holder_id, alias) NULLS NOT DISTINCT` that leaves out CONTRA |
+| `ledgers` | `id`, `account_class`, `alias`, `holder_id`, `created_at` | VOSTRO requires a holder and NOSTRO forbids it. `UNIQUE NULLS NOT DISTINCT (holder_id, alias)` |
+| `accounts` | `id`, `ledger_id`, `nature` | `UNIQUE (ledger_id, nature)`: one credit account and one debit account per ledger |
 | `transactions` | `id`, `type`, `original_transaction_id`, `description`, `created_at` | `original_transaction_id` is unique and only reversals have it |
 | `movements` | `id`, `transaction_id`, `account_id`, `entry_type`, `amount`, `created_at` | `amount > 0`. `created_at` takes `clock_timestamp()` |
 
 No table has a balance column.
 
-### `account_history` view
+### `ledger_history` view
 
-It has one row per movement of a NOSTRO or VOSTRO account (contra accounts are left out), with its transaction's type and the account's running balance, computed with a window function:
+It has one row per movement of a ledger's credit account, with its transaction's type and the ledger's running balance, computed with a window function:
 
 ```sql
-CREATE OR REPLACE VIEW account_history AS
+CREATE OR REPLACE VIEW ledger_history AS
 SELECT
   m.id AS movement_id,
-  m.account_id,
+  a.ledger_id,
   m.transaction_id,
   t.type,
   m.entry_type,
   m.amount,
   SUM(CASE WHEN m.entry_type = 'CREDIT' THEN m.amount ELSE -m.amount END)
-    OVER (PARTITION BY m.account_id ORDER BY m.created_at, m.id) AS balance,
+    OVER (PARTITION BY a.ledger_id ORDER BY m.created_at, m.id) AS balance,
   m.created_at
 FROM movements m
 JOIN transactions t ON t.id = m.transaction_id
 JOIN accounts a ON a.id = m.account_id
-WHERE a.account_class <> 'CONTRA'
+WHERE a.nature = 'CREDIT'
 ```
 
 It is defined in `src/account/domain_model.py` and is created and dropped together with the tables. It can also be queried directly from SQL:
 
 ```sql
 SELECT type, entry_type, amount, balance, created_at
-FROM account_history
-WHERE account_id = '<account_id>'
+FROM ledger_history
+WHERE ledger_id = '<account_id>'
 ORDER BY created_at, movement_id;
 ```
 
