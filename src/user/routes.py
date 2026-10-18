@@ -1,26 +1,19 @@
-from flask import Blueprint, jsonify, request
+from uuid import UUID
+
+from flask import Blueprint, jsonify
 from dependency_injector.wiring import inject, Provide
 
 from src.main.container import DIContainer
 from src.main.middleware import authenticated
 from src.main.utils import json_body
 from src.user.application_service import UserSignup, UserLogin, UserProfileReader, PasswordChanger
-from src.user.application_service import UserDeactivator
-from src.user.dto import UserCreate, AuthenticatedUser
+from src.user.application_service import UserDeactivator, UserLister
+from src.user.dto import UserCreate, AuthenticatedUser, UserProfile
 
 blueprint = Blueprint("user", __name__)
 
-# Profile of the authenticated user. Allowed with a pending password
-# so the client can read must_change_password (§7)
-@blueprint.route("/")
-@authenticated(allow_pending_password=True)
-@inject
-def profile(
-  actor: AuthenticatedUser,
-  user_profile_reader: UserProfileReader = Provide[DIContainer.user_profile_reader]
-):
-  profile = user_profile_reader.invoke(actor)
-  return jsonify(
+def profile_dict(profile: UserProfile) -> dict:
+  return dict(
     id=str(profile.id),
     email=profile.email,
     name=profile.name,
@@ -29,6 +22,33 @@ def profile(
     must_change_password=profile.must_change_password,
     created_at=profile.created_at.isoformat()
   )
+
+# List of every user, oldest to newest
+@blueprint.route("/", methods=["GET"])
+@authenticated()
+@inject
+def list_users(
+  actor: AuthenticatedUser,
+  user_lister: UserLister = Provide[DIContainer.user_lister]
+):
+  return jsonify(users=[profile_dict(profile) for profile in user_lister.invoke(actor)])
+
+# Profile of a user. Allowed with a pending password on one's own
+# profile so the client can read must_change_password (§7)
+@blueprint.route("/<uuid:user_id>", methods=["GET"])
+@authenticated(allow_pending_password=True)
+@inject
+def profile(
+  user_id: UUID,
+  actor: AuthenticatedUser,
+  user_profile_reader: UserProfileReader = Provide[DIContainer.user_profile_reader]
+):
+  try:
+    profile = user_profile_reader.invoke(actor, user_id)
+  except ValueError as error:
+    return jsonify(error=str(error)), 400
+
+  return jsonify(profile_dict(profile))
 
 # §7 Authentication: email and password in exchange for the access token
 @blueprint.route("/login", methods=["POST"])

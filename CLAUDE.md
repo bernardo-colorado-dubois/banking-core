@@ -4,7 +4,7 @@ Core bancario mínimo en Flask + SQLAlchemy + PostgreSQL que registra cuentas y 
 
 La especificación y el código están en inglés y usan los mismos nombres: rutas, claves JSON, modelo, esquema de BD, valores de los enums, servicios, comentarios y mensajes de error.
 
-Estado actual: el módulo `user` (usuarios, RBAC, login con JWT, altas de admin y operador, desactivación, cambio de contraseña, perfil) está implementado. El módulo `account` tiene las tablas contables (§9), las aperturas de cuenta (§8.3, §8.4, §8.13) y las operaciones: depósito (fondeo), retiro, transferencia y consulta de saldo con historial de movimientos (§8.5 a §8.12), con las invariantes de §6 y el bloqueo de filas de §10, además de la lista de cuentas para operador y admin y el reverso de transacciones (§8.15).
+Estado actual: el módulo `user` (usuarios, RBAC, login con JWT, altas de admin y operador, desactivación, cambio de contraseña, lista de usuarios y perfil) está implementado. El módulo `account` tiene las tablas contables (§9), las aperturas de cuenta (§8.3, §8.4, §8.13) y las operaciones: depósito (fondeo), retiro, transferencia y consulta de saldo con historial de movimientos (§8.5 a §8.12), con las invariantes de §6 y el bloqueo de filas de §10, además de la lista de cuentas para operador y admin y el reverso de transacciones (§8.15).
 
 ## Comandos
 
@@ -67,7 +67,8 @@ src/
 | Método | Ruta | Servicio de aplicación | Auth |
 |---|---|---|---|
 | GET | `/` | — | no |
-| GET | `/user/` | `UserProfileReader` | `@authenticated(allow_pending_password=True)` |
+| GET | `/user/` | `UserLister` | `@authenticated()` |
+| GET | `/user/<user_id>` | `UserProfileReader` | `@authenticated(allow_pending_password=True)` |
 | POST | `/user/login` | `UserLogin` | no |
 | POST | `/user/password` | `PasswordChanger` | `@authenticated(allow_pending_password=True)` |
 | POST | `/user/admin` | `UserSignup` (rol `ADMIN`, §8.1) | `@authenticated()` |
@@ -87,7 +88,8 @@ src/
 
 Cuerpos y respuestas:
 
-- `GET /user/`: perfil del usuario autenticado. Devuelve `id`, `email`, `name`, `role`, `active`, `must_change_password`, `created_at` (ISO 8601); nunca el hash de la contraseña.
+- `GET /user/`: devuelve `users`, la lista completa de usuarios del más antiguo al más reciente, cada uno con los campos del perfil.
+- `GET /user/<user_id>`: perfil de un usuario. Devuelve `id`, `email`, `name`, `role`, `active`, `must_change_password`, `created_at` (ISO 8601); nunca el hash de la contraseña.
 - `POST /user/login`: recibe `email`, `password`. Devuelve `token`, `must_change_password`.
 - `POST /user/password`: recibe `current_password`, `new_password`. Devuelve `must_change_password: false`.
 - `POST /user/admin` y `/user/operator`: reciben `email`, `password`. Devuelven 201 con `id`, `email`, `role`, `active`, `must_change_password`.
@@ -116,7 +118,8 @@ Módulo `user`:
 | `UserSignup` | Exige el permiso `MANAGE_USERS` y solo acepta los roles `ADMIN` y `OPERATOR`; delega en `UserCreator`. Los clientes se dan de alta con su cuenta (§8.3). |
 | `UserLogin` | Verifica credenciales y usuario activo, emite el JWT. Devuelve el mismo error en todos los fallos para no revelar qué emails existen. |
 | `UserAuthenticator` | Traduce el token a un `AuthenticatedUser`. Consulta al usuario en cada solicitud, así una desactivación o cambio de rol surte efecto de inmediato. Lo usa `@authenticated`. |
-| `UserProfileReader` | Devuelve el `UserProfile` del usuario autenticado, armado antes de cerrar la sesión. |
+| `UserLister` | Exige `MANAGE_USERS`. Devuelve el `UserProfile` de todos los usuarios; `find_all` carga el rol en la misma consulta. |
+| `UserProfileReader` | Devuelve el `UserProfile` de un usuario, armado con `UserProfile.of` antes de cerrar la sesión. El propio se puede ver siempre, aun con contraseña pendiente; el de otro exige `MANAGE_USERS` y la contraseña ya cambiada (`actor.must_change_password`). Rechaza id inexistente (400) solo a quien puede ver otros usuarios: a los demás les responde 403 sin buscarlo. |
 | `PasswordChanger` | Cambia la contraseña y apaga `must_change_password`. |
 | `UserDeactivator` | Exige `MANAGE_USERS`. Bloquea a los admins activos (`find_active_admins_for_update`) y luego al usuario, y pone `active` en false. Rechaza email inexistente, usuario ya inactivo y al único admin activo (§7). |
 

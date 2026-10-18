@@ -1,6 +1,6 @@
 from src.main.database import Base
 from sqlalchemy import CheckConstraint, Column, DateTime, ForeignKey, Table, UniqueConstraint, func
-from sqlalchemy.orm import Mapped, mapped_column, relationship, Session
+from sqlalchemy.orm import Mapped, mapped_column, relationship, joinedload, Session
 from datetime import datetime
 from enum import Enum
 from typing import List
@@ -88,8 +88,9 @@ class UserRepository:
   def __init__(self,session:Session) -> None:
     self.session = session
 
-  def find_all(self):
-    return self.session.query(User).all()
+  # Oldest to newest, with the role loaded in the same query
+  def find_all(self)->List[User]:
+    return self.session.query(User).options(joinedload(User.role)).order_by(User.created_at, User.id).all()
 
   def find_by_id(self,id:UUID)->User|None:
     return self.session.query(User).filter(User.id==id).one_or_none()

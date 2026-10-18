@@ -292,7 +292,7 @@ They are handled with `Decimal` in the code and `NUMERIC(18,2)` in the database,
 - Sent as `Authorization: Bearer <token>`.
 - The user is looked up on every request, so a deactivation or a role change takes effect immediately, without waiting for the token to expire.
 - Passwords are stored with bcrypt and allow at most 72 bytes.
-- Every new user starts with `must_change_password: true`. While it stays that way, they can only read their profile and change their password; every other route responds 403.
+- Every new user starts with `must_change_password: true`. While it stays that way, they can only read their own profile and change their password; every other route responds 403.
 - Login returns the same error on every failure, so as not to reveal which emails exist.
 
 ### Authorization
@@ -339,7 +339,8 @@ Every route receives and returns JSON. Except where marked, they require `Author
 | Method | Route | What it does | Permission |
 |---|---|---|---|
 | POST | `/user/login` | Logs in | No token |
-| GET | `/user/` | Authenticated user's profile | Any user¹ |
+| GET | `/user/` | Lists every user | `MANAGE_USERS` |
+| GET | `/user/<user_id>` | A user's profile | Own profile: any user¹; any other: `MANAGE_USERS` |
 | POST | `/user/password` | Changes the password | Any user¹ |
 | POST | `/user/admin` | Admin signup (§8.1) | `MANAGE_USERS` |
 | POST | `/user/operator` | Operator signup (§8.2) | `MANAGE_USERS` |
@@ -350,7 +351,8 @@ Every route receives and returns JSON. Except where marked, they require `Author
 | Route | Body | Response |
 |---|---|---|
 | `POST /user/login` | `email`, `password` | 200: `token`, `must_change_password` |
-| `GET /user/` | — | 200: `id`, `email`, `name`, `role`, `active`, `must_change_password`, `created_at` |
+| `GET /user/` | — | 200: `users`, oldest to newest, each one with the fields of `GET /user/<user_id>` |
+| `GET /user/<user_id>` | — | 200: `id`, `email`, `name`, `role`, `active`, `must_change_password`, `created_at` |
 | `POST /user/password` | `current_password`, `new_password` | 200: `must_change_password: false` |
 | `POST /user/admin`, `/user/operator` | `email`, `password` | 201: `id`, `email`, `role`, `active`, `must_change_password` |
 | `POST /user/deactivate` | `email` | 200: `id`, `email`, `role`, `active: false`, `must_change_password` |
@@ -476,7 +478,8 @@ Each service is a class with a single `invoke(...)` method, registered as a `Fac
 | `UserSignup` | Requires `MANAGE_USERS` and only accepts the `ADMIN` and `OPERATOR` roles. Clients sign up together with their account. |
 | `UserLogin` | Verifies the credentials and that the user is active, and issues the JWT. |
 | `UserAuthenticator` | Translates the token into an `AuthenticatedUser` with their id, role and permissions. Used by `@authenticated`. |
-| `UserProfileReader` | Returns the authenticated user's profile, without the password hash. |
+| `UserLister` | Requires `MANAGE_USERS` and returns every user, without the password hash. |
+| `UserProfileReader` | Returns a user's profile, without the password hash: one's own, or anyone's with `MANAGE_USERS`. |
 | `PasswordChanger` | Changes the password and turns off `must_change_password`. |
 | `UserDeactivator` | Requires `MANAGE_USERS` and sets `active` to false. Locks the active admins and refuses to deactivate the last one. |
 

@@ -452,7 +452,8 @@ Every route receives and returns JSON. Except where marked, they require `Author
 | Method | Route | Service | Permission |
 |---|---|---|---|
 | POST | `/user/login` | Login (§7) | No token |
-| GET | `/user/` | Authenticated user's profile | Any user¹ |
+| GET | `/user/` | List of every user | `MANAGE_USERS` |
+| GET | `/user/<user_id>` | A user's profile | Own profile: any user¹; any other: `MANAGE_USERS` |
 | POST | `/user/password` | Password change (§7) | Any user¹ |
 | POST | `/user/admin` | Admin signup (§8.1) | `MANAGE_USERS` |
 | POST | `/user/operator` | Operator signup (§8.2) | `MANAGE_USERS` |
@@ -474,7 +475,8 @@ Bodies and responses:
 | Route | Body | Response |
 |---|---|---|
 | `POST /user/login` | `email`, `password` | 200: `token`, `must_change_password` |
-| `GET /user/` | — | 200: `id`, `email`, `name`, `role`, `active`, `must_change_password`, `created_at` |
+| `GET /user/` | — | 200: `users`, oldest to newest, each one with the profile fields |
+| `GET /user/<user_id>` | — | 200: profile fields |
 | `POST /user/password` | `current_password`, `new_password` | 200: `must_change_password: false` |
 | `POST /user/admin`, `/user/operator` | `email`, `password` | 201: `id`, `email`, `role`, `active`, `must_change_password` |
 | `POST /user/deactivate` | `email` | 200: `id`, `email`, `role`, `active: false`, `must_change_password` |
@@ -487,6 +489,7 @@ Bodies and responses:
 | `GET /account/<account_id>/balance` | — | 200: `account_id`, `account_class`, `alias`, `movements` |
 | `POST /account/transaction/<transaction_id>/reversal` | — | 201: `transaction_id`, `type` (`REVERSAL`), `original_transaction_id`, `original_type`, `amount`, `accounts`, `created_at` |
 
+- **Profile fields:** `id`, `email`, `name`, `role`, `active`, `must_change_password`, `created_at`. Never the password hash.
 - **Opening fields:** `id`, `account_class`, `alias`, `holder`, `holder_id`, `created_at`. In NOSTRO accounts, `holder` is the bank's name and `holder_id` is null.
 - **Operation fields:** `transaction_id`, `type`, `amount`, `account_id`, `destination_account_id` (null except in transfers), `balance` (that of `account_id` after the operation), `created_at`.
 - **Movements:** oldest to newest. Each one carries `movement_id`, `transaction_id`, `type`, `entry_type`, `amount`, `balance` (the account's balance after that movement) and `created_at`. There is no overall balance: the current one is the last movement's.

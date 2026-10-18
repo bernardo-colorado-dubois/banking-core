@@ -10,7 +10,7 @@ from src.account.application_service import ClientSignup, VostroAccountOpener, N
 from src.account.application_service import AccountFunder, AccountWithdrawer, AccountTransfer, AccountBalanceReader
 from src.account.application_service import AccountLister, TransactionReverser
 from src.user.application_service import UserCreator, UserSignup, UserLogin, UserAuthenticator, UserProfileReader, PasswordChanger
-from src.user.application_service import UserDeactivator
+from src.user.application_service import UserDeactivator, UserLister
 
 class DIContainer(DeclarativeContainer):
 
@@ -39,6 +39,7 @@ class DIContainer(DeclarativeContainer):
     repository=user_repository,
     jwt_secret=config.jwt_secret
   )
+  user_lister = Factory(UserLister, repository=user_repository)
   user_profile_reader = Factory(UserProfileReader, repository=user_repository)
   password_changer = Factory(PasswordChanger, repository=user_repository)
   user_deactivator = Factory(UserDeactivator, repository=user_repository)

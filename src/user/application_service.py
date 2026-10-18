@@ -105,33 +105,47 @@ class UserAuthenticator:
       return AuthenticatedUser(
         id=user.id,
         role=user.role.name,
-        permissions=frozenset((permission.action, permission.scope) for permission in user.role.permissions)
+        permissions=frozenset((permission.action, permission.scope) for permission in user.role.permissions),
+        must_change_password=user.must_change_password
       )
     finally:
       self.repository.close()
 
-class UserProfileReader:
-  """Profile of the authenticated user, without sensitive data."""
+class UserLister:
+  """List of every user, without sensitive data. Modifies nothing."""
 
   def __init__(self,repository:UserRepository) -> None:
     self.repository = repository
 
-  def invoke(self,actor:AuthenticatedUser)->UserProfile:
-    try:
-      user = self.repository.find_by_id(actor.id)
-      if user is None:
-        raise AuthenticationError('Invalid or expired token')
+  def invoke(self,actor:AuthenticatedUser)->list[UserProfile]:
+    if not actor.has_permission(Action.MANAGE_USERS):
+      raise PermissionDenied('You do not have permission to view the user list')
 
-      # The DTO is built before closing the session: the role is lazy-loaded
-      return UserProfile(
-        id=user.id,
-        email=user.email,
-        name=user.name,
-        role=user.role.name,
-        active=user.active,
-        must_change_password=user.must_change_password,
-        created_at=user.created_at
-      )
+    try:
+      return [UserProfile.of(user) for user in self.repository.find_all()]
+    finally:
+      self.repository.close()
+
+class UserProfileReader:
+  """Profile of a user, without sensitive data: one's own, or anyone's with MANAGE_USERS."""
+
+  def __init__(self,repository:UserRepository) -> None:
+    self.repository = repository
+
+  def invoke(self,actor:AuthenticatedUser,user_id:UUID)->UserProfile:
+    # With the initial password one can only read one's own profile (§7)
+    if user_id != actor.id:
+      if actor.must_change_password:
+        raise PermissionDenied('You must change your password before operating')
+      if not actor.has_permission(Action.MANAGE_USERS):
+        raise PermissionDenied('You do not have permission to view this user')
+
+    try:
+      user = self.repository.find_by_id(user_id)
+      if user is None:
+        raise ValueError(f'No user exists with the id {user_id}')
+
+      return UserProfile.of(user)
     finally:
       self.repository.close()
 
@@ -186,16 +200,7 @@ class UserDeactivator:
 
       user.active = False
 
-      # The DTO is built before closing the session: the role is lazy-loaded
-      profile = UserProfile(
-        id=user.id,
-        email=user.email,
-        name=user.name,
-        role=user.role.name,
-        active=user.active,
-        must_change_password=user.must_change_password,
-        created_at=user.created_at
-      )
+      profile = UserProfile.of(user)
       self.repository.update(user)
       return profile
     finally:
