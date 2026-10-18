@@ -270,6 +270,33 @@ A reversal undoes a transaction with another one of type `REVERSAL`, which repea
 
 Movements are **immutable**: they are never edited or deleted. Their amount is always positive; the direction is given by the entry type (`DEBIT` or `CREDIT`).
 
+### How double entry works
+
+Each ledger records both sides of the same money:
+
+- The **debit account** is the asset: the money the bank holds for the account. It grows with debits.
+- The **credit account** is the liability: what the bank owes the holder. It grows with credits.
+
+When money comes in, the bank holds more and owes more, so the debit account is debited and the credit account is credited for the same amount. When money goes out, both shrink: the credit account is debited and the debit account is credited. Each movement on one ledger account has its mirror, with the opposite entry type, on the other. That is why both balances can never diverge (invariant 2), and why each transaction's debits equal its credits (invariant 1).
+
+Example with two accounts, A and B:
+
+| Step | Movements | A credit (liability) | A debit (asset) | B credit (liability) | B debit (asset) |
+|---|---|---|---|---|---|
+| Deposit 500.00 to A | Debit A-debit 500.00 · Credit A-credit 500.00 | 500.00 | 500.00 | 0.00 | 0.00 |
+| Transfer 200.00 A → B | Debit A-credit 200.00 · Credit A-debit 200.00<br>Debit B-debit 200.00 · Credit B-credit 200.00 | 300.00 | 300.00 | 200.00 | 200.00 |
+| Withdrawal 50.00 from B | Debit B-credit 50.00 · Credit B-debit 50.00 | 300.00 | 300.00 | 150.00 | 150.00 |
+
+At the end, A's two ledger accounts look like this:
+
+| Credit account A (credits − debits) | | Debit account A (debits − credits) | |
+|---|---|---|---|
+| Credit: deposit | 500.00 | Debit: deposit | 500.00 |
+| Debit: transfer to B | 200.00 | Credit: transfer to B | 200.00 |
+| **Balance** | **300.00** | **Balance** | **300.00** |
+
+The balance the API returns is the credit account's, and the history (`GET /account/<account_id>/balance`) lists its movements. That is why a deposit shows up as `CREDIT` and a withdrawal or an outgoing transfer as `DEBIT`. The debit account is never queried: it is the mirror that proves the ledger balances on its own.
+
 ### Invariants
 
 `Transaction.validate(ledgers, balances)` applies them before saving any transaction (§6):
