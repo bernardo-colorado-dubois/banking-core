@@ -1,12 +1,12 @@
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
-.PHONY: help up down build restart logs ps shell psql create-admin
+.PHONY: help up down build restart logs front-logs ps shell psql create-admin
 
 help: ## Lista los comandos
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "} {printf "  %-14s %s\n", $$1, $$2}'
 
-up: ## Construye y levanta la app y PostgreSQL
+up: ## Construye y levanta la app, el frontend y PostgreSQL
 	docker compose up -d --build
 
 down: ## Detiene los contenedores (los datos se conservan en el volumen)
@@ -20,6 +20,9 @@ restart: ## Reinicia la app
 
 logs: ## Sigue los logs de la app
 	docker compose logs -f app
+
+front-logs: ## Sigue los logs del frontend
+	docker compose logs -f frontend
 
 ps: ## Estado de los contenedores
 	docker compose ps

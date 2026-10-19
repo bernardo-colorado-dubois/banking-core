@@ -127,20 +127,26 @@ class NostroAccountOpener:
       self.repository.close()
 
 class AccountLister:
-  """List of every account with its holder and current balance (§7). Modifies nothing."""
+  """Accounts with their holder and current balance (§7): every account, or only the actor's own. Modifies nothing."""
 
   def __init__(self,repository:LedgerRepository,bank_name:str) -> None:
     self.repository = repository
     self.bank_name = bank_name
 
   def invoke(self,actor:AuthenticatedUser)->list[AccountSummary]:
-    # The list includes accounts of both classes: VIEW is required on both scopes
-    if not (actor.has_permission(Action.VIEW, Scope.VOSTRO) and actor.has_permission(Action.VIEW, Scope.NOSTRO)):
+    # The full list includes accounts of both classes: VIEW is required on both scopes.
+    # Whoever only has VIEW on OWN gets their own accounts, so a client can find them
+    sees_all = actor.has_permission(Action.VIEW, Scope.VOSTRO) and actor.has_permission(Action.VIEW, Scope.NOSTRO)
+    if not sees_all and not actor.has_permission(Action.VIEW, Scope.OWN):
       raise PermissionDenied('You do not have permission to view the account list')
 
     try:
-      ledgers = self.repository.find_all()
-      balances = self.repository.balances()
+      if sees_all:
+        ledgers = self.repository.find_all()
+        balances = self.repository.balances()
+      else:
+        ledgers = self.repository.find_by_holder(actor.id)
+        balances = self.repository.balances([ledger.id for ledger in ledgers])
       return [
         AccountSummary(
           id=ledger.id,

@@ -8,3 +8,7 @@ venv/
 __pycache__/
 *.pyc
 debug/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/

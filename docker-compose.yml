@@ -37,5 +37,23 @@ services:
       postgres:
         condition: service_healthy
 
+  frontend:
+    image: node:22-alpine
+    container_name: core_bancario_frontend
+    restart: unless-stopped
+    working_dir: /app
+    # Vite proxies /api to the app service, so the browser sees a single origin
+    environment:
+      API_URL: http://app:8080
+    command: sh -c "npm ci && npm run dev"
+    ports:
+      - "${FRONTEND_PORT:-5173}:5173"
+    volumes:
+      # The code is mounted so Vite reloads on save; node_modules stays in the container
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - app
+
 volumes:
   postgres_data:

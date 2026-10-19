@@ -458,7 +458,7 @@ Every route receives and returns JSON. Except where marked, they require `Author
 | POST | `/user/admin` | Admin signup (§8.1) | `MANAGE_USERS` |
 | POST | `/user/operator` | Operator signup (§8.2) | `MANAGE_USERS` |
 | POST | `/user/deactivate` | User deactivation (§8.14) | `MANAGE_USERS` |
-| GET | `/account/` | List of every account with its holder and current balance | `VIEW:VOSTRO` and `VIEW:NOSTRO` |
+| GET | `/account/` | List of every account with its holder and current balance; with only `VIEW:OWN`, the user's own accounts | `VIEW:VOSTRO` and `VIEW:NOSTRO`, or `VIEW:OWN` |
 | POST | `/account/client` | Client signup (§8.3) | `OPEN_ACCOUNT:VOSTRO` |
 | POST | `/account/vostro` | Account opening (§8.4) | `OPEN_ACCOUNT:VOSTRO` |
 | POST | `/account/nostro` | Account opening (NOSTRO) (§8.13) | `OPEN_ACCOUNT:NOSTRO` |

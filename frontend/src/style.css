@@ -1,0 +1,77 @@
+:root {
+  --bg: #F4F6FA; --surface: #FFFFFF; --ink: #0F172A; --muted: #5B6B85; --line: #E2E8F0;
+  --accent: #2F5BEA; --accent-ink: #FFFFFF; --soft: #EEF2FF;
+  --credit: #047857; --debit: #B45309; --danger: #B91C1C; --danger-soft: #FEF2F2;
+  --success-soft: #ECFDF5;
+  --radius: 12px; --shadow: 0 1px 2px rgba(15, 23, 42, .06), 0 4px 16px rgba(15, 23, 42, .04);
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0A1120; --surface: #111A2E; --ink: #EDF2FB; --muted: #93A3BF; --line: rgba(255, 255, 255, .10);
+    --accent: #7AA2FF; --accent-ink: #0A1120; --soft: rgba(122, 162, 255, .12);
+    --credit: #34D399; --debit: #FBBF24; --danger: #F87171; --danger-soft: rgba(248, 113, 113, .12);
+    --success-soft: rgba(52, 211, 153, .12);
+    --shadow: none;
+    color-scheme: dark;
+  }
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'Inter', system-ui, sans-serif; color: var(--ink); background: var(--bg);
+  line-height: 1.5; -webkit-font-smoothing: antialiased;
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+.mono, code { font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: .92em; }
+.muted { color: var(--muted); }
+
+.page { max-width: 1080px; margin: 0 auto; padding: 32px 16px 64px; }
+.page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 24px; }
+h1 { font-size: 1.6rem; font-weight: 700; letter-spacing: -.01em; }
+h2 { font-size: 1.05rem; font-weight: 600; margin-bottom: 16px; }
+
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 24px; }
+
+/* Forms */
+form { display: grid; gap: 16px; }
+label { display: grid; gap: 6px; font-size: .875rem; font-weight: 500; }
+input, select {
+  font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line);
+  border-radius: 8px; padding: 10px 12px; width: 100%;
+}
+input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+
+button, .button {
+  font: inherit; font-weight: 600; font-size: .9rem; cursor: pointer; border: 1px solid transparent;
+  border-radius: 8px; padding: 10px 16px; background: var(--accent); color: var(--accent-ink);
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+}
+button:disabled { opacity: .6; cursor: default; }
+.button:hover { text-decoration: none; }
+button.ghost, .button.ghost { background: transparent; color: var(--ink); border-color: var(--line); }
+button.link { background: none; border: 0; padding: 0; color: var(--accent); font-weight: 500; }
+button.danger { background: transparent; color: var(--danger); border-color: var(--danger); padding: 4px 10px; font-size: .8rem; }
+
+.alert { border-radius: 8px; padding: 10px 12px; font-size: .875rem; }
+.alert.error { background: var(--danger-soft); color: var(--danger); }
+.alert.success { background: var(--success-soft); color: var(--credit); }
+
+/* Tabs */
+.tabs { display: flex; gap: 4px; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 4px; margin-bottom: 20px; }
+.tabs button { flex: 1; background: transparent; color: var(--muted); padding: 8px 10px; }
+.tabs button.active { background: var(--surface); color: var(--ink); box-shadow: var(--shadow); }
+
+/* Tables */
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+th { text-align: left; font-size: .75rem; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); padding: 10px 12px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+td { padding: 12px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+tbody tr:last-child td { border-bottom: 0; }
+.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+.badge { display: inline-block; font-size: .72rem; font-weight: 600; letter-spacing: .03em; border-radius: 999px; padding: 2px 8px; background: var(--soft); color: var(--accent); }
+.credit { color: var(--credit); }
+.debit { color: var(--debit); }

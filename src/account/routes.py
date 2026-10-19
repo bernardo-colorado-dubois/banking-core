@@ -34,7 +34,7 @@ def account_dict(account: AccountDetail) -> dict:
 def account_json(account: AccountDetail):
   return jsonify(account_dict(account))
 
-# List of every account, NOSTRO and VOSTRO, with its holder and current balance (§7)
+# List of accounts with their holder and current balance (§7): every NOSTRO and VOSTRO, or the client's own
 @blueprint.route("/", methods=["GET"])
 @authenticated()
 @inject

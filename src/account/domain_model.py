@@ -265,6 +265,11 @@ class LedgerRepository:
   def find_all(self)->List[Ledger]:
     return self.session.query(Ledger).options(joinedload(Ledger.holder)).order_by(Ledger.created_at, Ledger.id).all()
 
+  def find_by_holder(self,holder_id:UUID)->List[Ledger]:
+    return self.session.query(Ledger).options(joinedload(Ledger.holder)).filter(
+      Ledger.holder_id==holder_id
+    ).order_by(Ledger.created_at, Ledger.id).all()
+
   def find_by_holder_and_alias(self,holder_id:UUID|None,alias:str)->Ledger|None:
     return self.session.query(Ledger).filter(
       Ledger.holder_id.is_not_distinct_from(holder_id),
@@ -293,14 +298,17 @@ class LedgerRepository:
     ).scalar()
     return Decimal(balance).quantize(Decimal('0.01'))
 
-  # Balance of every ledger in a single query; ledgers without movements are missing
-  def balances(self)->dict[UUID,Decimal]:
+  # Balance of every ledger, or only of the given ones, in a single query; ledgers without movements are missing
+  def balances(self,ids:List[UUID]|None=None)->dict[UUID,Decimal]:
     signed_amount = case((Movement.entry_type==EntryType.CREDIT, Movement.amount), else_=-Movement.amount)
-    rows = self.session.query(Account.ledger_id, func.sum(signed_amount)).join(
+    query = self.session.query(Account.ledger_id, func.sum(signed_amount)).join(
       Account, Account.id==Movement.account_id
     ).filter(
       Account.nature==Nature.CREDIT
-    ).group_by(Account.ledger_id).all()
+    )
+    if ids is not None:
+      query = query.filter(Account.ledger_id.in_(ids))
+    rows = query.group_by(Account.ledger_id).all()
     return {ledger_id: Decimal(balance).quantize(Decimal('0.01')) for ledger_id, balance in rows}
 
   # Oldest movement to newest; the balance on the last row is the current one

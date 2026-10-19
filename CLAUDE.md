@@ -10,8 +10,9 @@ Estado actual: el módulo `user` (usuarios, RBAC, login con JWT, altas de admin 
 
 ```bash
 make up            # construye y levanta la app (Dockerfile) y PostgreSQL 17 en http://localhost:8080 (o el puerto de PORT)
+                   # y el frontend en http://localhost:5173 (o el puerto de FRONTEND_PORT)
 make create-admin  # DESTRUCTIVO: borra y recrea todas las tablas, siembra roles/permisos y el primer admin (pide confirmación)
-make help          # lista los demás: down, build, restart, logs, ps, shell, psql
+make help          # lista los demás: down, build, restart, logs, front-logs, ps, shell, psql
 ```
 
 - Todo corre en `docker-compose.yml`: el servicio `app` (servidor de desarrollo de Flask con `--debug`) y `postgres` (se requiere 15+ por UNIQUE NULLS NOT DISTINCT). El directorio del proyecto se monta en `/app`, así que el servidor recarga al guardar; tras cambiar `requirements.txt` hay que reconstruir con `make build`.
@@ -19,6 +20,7 @@ make help          # lista los demás: down, build, restart, logs, ps, shell, ps
 - `create_admin.py` hace `drop_all` + `create_all`, que también borran y crean la vista `ledger_history`. Es la única forma de crear el esquema. `drop_all` solo borra las tablas del modelo actual: si se renombra una tabla o la vista, la anterior hay que borrarla a mano (con `CASCADE` si otra tabla la referencia).
 - Para verificar una ruta se usa `app.test_client()`.
 - Las dependencias están fijadas en `requirements.txt` y se instalan en la imagen.
+- El servicio `frontend` (node:22-alpine) monta `frontend/`, corre `npm ci` y el servidor de Vite. Su `node_modules` vive en un volumen anónimo del contenedor.
 
 ## Variables de entorno
 
@@ -31,6 +33,7 @@ Se cargan de `.env` con `python-dotenv`. `.env` no se versiona; se crea copiando
 | `JWT_SECRET` | Clave de firma HS256 |
 | `JWT_EXPIRATION_MINUTES` | Duración del access token, 20 por defecto |
 | `PORT` | Puerto del host donde se publica la app, 8080 por defecto |
+| `FRONTEND_PORT` | Puerto del host donde se publica el frontend, 5173 por defecto |
 | `BANK_NAME` | Titular que se muestra en las cuentas NOSTRO (§7) |
 | `ADMIN_EMAIL`, `ADMIN_PASSWORD` | Primer admin que crea `create_admin.py` |
 
@@ -64,6 +67,27 @@ src/
 
 - Los blueprints van en `src/<módulo>/routes.py`, no en una carpeta `api/`.
 - `domain_model.py` reúne el modelo ORM y su repositorio en un solo archivo.
+
+## Frontend
+
+`frontend/` es un proyecto aparte de Vite + Vue 3 + Vue Router, sin librerías de UI ni de estado (versiones fijadas en `package.json`). No toca el backend: lo consume por HTTP.
+
+```
+frontend/
+├── vite.config.js           # proxy /api → API_URL (http://app:8080 en compose, localhost:8080 fuera)
+└── src/
+    ├── api.js               # fetch con el Bearer; un 401 cierra la sesión y manda al login
+    ├── session.js           # token en sessionStorage; sub y role se leen de sus claims
+    ├── format.js            # montos como texto, nunca Number; fechas en es-MX
+    ├── router.js            # guardas: sin token → login, must_change_password → /password
+    ├── App.vue, style.css   # barra superior y tokens de color claro/oscuro
+    └── views/               # Login, Password, Accounts, Account (historial y operaciones), OpenAccount
+```
+
+- El navegador solo habla con el origen de Vite, así que Flask no necesita CORS.
+- La UI muestra todas las acciones y deja que la API responda 403: no decide permisos por rol.
+- Un cliente recibe de `GET /account/` solo sus cuentas: la lista las muestra como "Your accounts" y, si tiene una sola, lo manda directo a `/account/{id}`.
+- En una transferencia el destino se elige de la lista de cuentas o se escribe su id, porque un cliente solo lista las suyas.
 
 ## Rutas
 
@@ -101,7 +125,7 @@ Cuerpos y respuestas:
 - `POST /account/vostro`: recibe `email` del cliente existente y `alias`.
 - `POST /account/nostro`: recibe `alias`.
 - Las tres aperturas crean el ledger con sus dos cuentas (§4.2) y devuelven 201 con `id` (el del ledger), `account_class`, `alias`, `holder`, `holder_id`, `created_at`. `holder` es el nombre del cliente o, en NOSTRO, `BANK_NAME` (con `holder_id` nulo).
-- `GET /account/`: devuelve `accounts`, la lista completa de cuentas NOSTRO y VOSTRO de la más antigua a la más reciente, cada una con los mismos campos que una apertura más `balance`, su saldo actual (`"0.00"` si no tiene movimientos).
+- `GET /account/`: devuelve `accounts`, la lista completa de cuentas NOSTRO y VOSTRO (o, para un cliente, solo las suyas) de la más antigua a la más reciente, cada una con los mismos campos que una apertura más `balance`, su saldo actual (`"0.00"` si no tiene movimientos).
 - `POST /account/<account_id>/deposit` y `/withdrawal`: reciben `amount`.
 - `POST /account/<account_id>/transfer`: la cuenta de la ruta es el origen; recibe `destination_account_id`, `amount`.
 - Las tres operaciones devuelven 201 con `transaction_id`, `type`, `amount`, `account_id`, `destination_account_id` (nulo salvo en transferencias), `balance` (el de `account_id` después de la operación) y `created_at`.
@@ -133,7 +157,7 @@ Módulo `account`:
 | `ClientSignup` | Exige `OPEN_ACCOUNT:VOSTRO`. Crea el usuario `CLIENT` y su ledger con sus dos cuentas en un solo commit: el ledger se guarda con el titular nuevo y sus cuentas en cascada. No pasa por `UserCreator`, que hace su propio commit. |
 | `VostroAccountOpener` | Exige `OPEN_ACCOUNT:VOSTRO`. Rechaza email inexistente, usuario que no es `CLIENT` o inactivo, y alias repetido para ese cliente. |
 | `NostroAccountOpener` | Exige `OPEN_ACCOUNT:NOSTRO`. Rechaza alias repetido entre las cuentas del banco. |
-| `AccountLister` | Exige `VIEW` sobre `VOSTRO` y sobre `NOSTRO` a la vez, porque la lista trae ambas clases; por la semilla solo lo cumplen operador y admin. Devuelve todas las cuentas con su titular y su saldo actual; los saldos salen de una sola consulta agrupada (`balances`), no de una por cuenta. No bloquea ni modifica nada. |
+| `AccountLister` | Con `VIEW` sobre `VOSTRO` y sobre `NOSTRO` a la vez (operador y admin) devuelve todas las cuentas; con solo `VIEW` sobre `OWN` (cliente), las suyas (`find_by_holder`); sin ninguno, 403. Cada cuenta va con su titular y su saldo actual; los saldos salen de una sola consulta agrupada (`balances`, filtrada por ids en el caso del cliente), no de una por cuenta. No bloquea ni modifica nada. |
 | `AccountFunder`, `AccountWithdrawer` | Bloquean la cuenta, exigen `DEPOSIT` o `WITHDRAW` sobre su alcance, arman la transacción, validan §6 y la guardan. |
 | `AccountTransfer` | Bloquea ambas cuentas en orden de id. Exige `TRANSFER` solo sobre el origen; el destino solo debe existir. |
 | `TransactionReverser` | Bloquea las cuentas de la transacción original y exige `REVERSE` sobre el alcance de cada una; por la semilla solo lo cumple el admin. Arma `Transaction.reversal(original)`, valida §6 y la guarda. Rechaza transacción inexistente, reverso de un reverso, transacción ya reversada y fondos insuficientes. |
