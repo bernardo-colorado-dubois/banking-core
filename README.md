@@ -51,19 +51,22 @@ The exact versions are pinned in `requirements.txt`.
 # 1. Environment variables
 cp .env.example .env            # and adjust the values
 
-# 2. Dependencies
-python -m venv venv
-venv/bin/pip install -r requirements.txt
+# 2. Build and start the app and PostgreSQL (http://localhost:8080, or the PORT port)
+make up
 
-# 3. Database
-docker compose up -d
-
-# 4. Schema, roles, permissions and first admin
-venv/bin/python create_admin.py
-
-# 5. Development server at http://localhost:8080 (or the PORT port)
-venv/bin/python app.py
+# 3. Schema, roles, permissions and first admin
+make create-admin
 ```
+
+Everything runs in Docker Compose: the `app` service (the `Dockerfile`, Flask development server) and the `postgres` service. The project directory is mounted in the container, so the server reloads on every save; after changing `requirements.txt` rebuild the image with `make build`. Inside Compose, `DATABASE_URL` is overridden to reach the database by service name. `make help` lists every command:
+
+| Command | Use |
+|---|---|
+| `make up` / `make down` | Build and start, or stop, both containers (data is kept in the volume) |
+| `make build` / `make restart` | Rebuild the app image, or restart the app |
+| `make logs` / `make ps` | Follow the app logs, or show the containers |
+| `make shell` / `make psql` | Shell in the app container, or `psql` on the database |
+| `make create-admin` | Drop and recreate the schema, seed RBAC and the first admin (asks for confirmation) |
 
 > **`create_admin.py` is destructive:** it drops and recreates every table and the `ledger_history` view. It is the only way to create the schema.
 
@@ -71,11 +74,11 @@ venv/bin/python app.py
 
 | Variable | Use |
 |---|---|
-| `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `POSTGRES_PORT` | `docker-compose.yml` container |
-| `DATABASE_URL` | SQLAlchemy connection string (`postgresql+psycopg://...`) |
+| `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `POSTGRES_PORT` | `postgres` container; Compose also builds the app's `DATABASE_URL` from them |
+| `DATABASE_URL` | SQLAlchemy connection string (`postgresql+psycopg://...`); overridden inside Compose |
 | `JWT_SECRET` | HS256 signing key |
 | `JWT_EXPIRATION_MINUTES` | Access token lifetime, 20 by default |
-| `PORT` | Development server port, 8080 by default |
+| `PORT` | Host port the app is published on, 8080 by default |
 | `BANK_NAME` | Holder shown on NOSTRO accounts |
 | `ADMIN_EMAIL`, `ADMIN_PASSWORD` | First admin created by `create_admin.py` |
 
@@ -129,7 +132,9 @@ flowchart TB
 ```
 app.py                       # creates the container, wires it and registers the blueprints
 create_admin.py              # schema + RBAC seed + first admin
-docker-compose.yml           # PostgreSQL
+Dockerfile                   # app image (Flask development server)
+docker-compose.yml           # app + PostgreSQL
+Makefile                     # docker compose commands
 src/
 ├── main/                    # shared by every module
 │   ├── container.py         # DIContainer: engine, sessions, repositories and services

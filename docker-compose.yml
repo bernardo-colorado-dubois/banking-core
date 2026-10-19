@@ -20,5 +20,22 @@ services:
       timeout: 5s
       retries: 10
 
+  app:
+    build: .
+    container_name: core_bancario_app
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # Dentro de la red de compose la base se alcanza por el nombre del servicio, no por localhost
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    ports:
+      - "${PORT:-8080}:8080"
+    volumes:
+      # El código montado permite que el servidor de desarrollo recargue al guardar
+      - .:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+
 volumes:
   postgres_data:

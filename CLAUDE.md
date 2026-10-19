@@ -9,14 +9,16 @@ Estado actual: el módulo `user` (usuarios, RBAC, login con JWT, altas de admin 
 ## Comandos
 
 ```bash
-docker compose up -d            # PostgreSQL 17 (se requiere 15+ por UNIQUE NULLS NOT DISTINCT)
-venv/bin/python create_admin.py # DESTRUCTIVO: borra y recrea todas las tablas, siembra roles/permisos y el primer admin
-venv/bin/python app.py          # servidor de desarrollo en http://localhost:8080 (o el puerto de PORT)
+make up            # construye y levanta la app (Dockerfile) y PostgreSQL 17 en http://localhost:8080 (o el puerto de PORT)
+make create-admin  # DESTRUCTIVO: borra y recrea todas las tablas, siembra roles/permisos y el primer admin (pide confirmación)
+make help          # lista los demás: down, build, restart, logs, ps, shell, psql
 ```
 
+- Todo corre en `docker-compose.yml`: el servicio `app` (servidor de desarrollo de Flask con `--debug`) y `postgres` (se requiere 15+ por UNIQUE NULLS NOT DISTINCT). El directorio del proyecto se monta en `/app`, así que el servidor recarga al guardar; tras cambiar `requirements.txt` hay que reconstruir con `make build`.
+- Dentro de Compose, `DATABASE_URL` se sobrescribe con el host `postgres`; `load_dotenv` no pisa variables ya definidas. El `DATABASE_URL` de `.env` (con `localhost`) solo sirve para correr fuera del contenedor.
 - `create_admin.py` hace `drop_all` + `create_all`, que también borran y crean la vista `ledger_history`. Es la única forma de crear el esquema. `drop_all` solo borra las tablas del modelo actual: si se renombra una tabla o la vista, la anterior hay que borrarla a mano (con `CASCADE` si otra tabla la referencia).
 - Para verificar una ruta se usa `app.test_client()`.
-- Las dependencias están fijadas en `requirements.txt` y se instalan en `venv/`.
+- Las dependencias están fijadas en `requirements.txt` y se instalan en la imagen.
 
 ## Variables de entorno
 
@@ -28,7 +30,7 @@ Se cargan de `.env` con `python-dotenv`. `.env` no se versiona; se crea copiando
 | `DATABASE_URL` | Cadena de conexión de SQLAlchemy (`postgresql+psycopg://...`) |
 | `JWT_SECRET` | Clave de firma HS256 |
 | `JWT_EXPIRATION_MINUTES` | Duración del access token, 20 por defecto |
-| `PORT` | Puerto del servidor de desarrollo, 8080 por defecto |
+| `PORT` | Puerto del host donde se publica la app, 8080 por defecto |
 | `BANK_NAME` | Titular que se muestra en las cuentas NOSTRO (§7) |
 | `ADMIN_EMAIL`, `ADMIN_PASSWORD` | Primer admin que crea `create_admin.py` |
 
@@ -37,6 +39,7 @@ Se cargan de `.env` con `python-dotenv`. `.env` no se versiona; se crea copiando
 La especificación (§3) propone una carpeta por capa dentro de cada módulo. El código real usa **archivos planos por módulo**, y esa es la convención a seguir:
 
 ```
+Dockerfile, docker-compose.yml, Makefile
 app.py                       # crea el contenedor, lo cablea, registra los blueprints
 create_admin.py              # esquema + semilla RBAC + primer admin
 src/
