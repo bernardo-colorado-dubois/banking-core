@@ -1,9 +1,14 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
 import { api } from '../api'
+import { session } from '../session'
 import { date, money, shortId, validAmount } from '../format'
 
 const props = defineProps({ id: { type: String, required: true } })
+
+// Only the admin holds REVERSE (§8.15). The token carries the role, not the permissions,
+// so the button follows the role; the API still checks the permission
+const canReverse = computed(() => session.role === 'ADMIN')
 
 const account = ref(null)
 const error = ref('')
@@ -177,7 +182,7 @@ async function reverse(movement) {
                   <th>Transaction</th>
                   <th class="num">Amount</th>
                   <th class="num">Balance</th>
-                  <th></th>
+                  <th v-if="canReverse"></th>
                 </tr>
               </thead>
               <tbody>
@@ -189,7 +194,7 @@ async function reverse(movement) {
                     {{ movement.entry_type === 'CREDIT' ? '+' : '−' }}{{ money(movement.amount) }}
                   </td>
                   <td class="num mono">{{ money(movement.balance) }}</td>
-                  <td class="num">
+                  <td v-if="canReverse" class="num">
                     <button v-if="movement.type !== 'REVERSAL'" class="danger" @click="reverse(movement)">Reverse</button>
                   </td>
                 </tr>

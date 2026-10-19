@@ -85,7 +85,7 @@ frontend/
 ```
 
 - El navegador solo habla con el origen de Vite, así que Flask no necesita CORS.
-- La UI muestra todas las acciones y deja que la API responda 403: no decide permisos por rol.
+- La UI muestra todas las acciones y deja que la API responda 403, salvo el botón de reverso, que solo ve el admin (`session.role`): el token trae el rol y no los permisos. La API sigue exigiendo `REVERSE`.
 - Un cliente recibe de `GET /account/` solo sus cuentas: la lista las muestra como "Your accounts" y, si tiene una sola, lo manda directo a `/account/{id}`.
 - En una transferencia el destino se elige de la lista de cuentas o se escribe su id, porque un cliente solo lista las suyas.
 
