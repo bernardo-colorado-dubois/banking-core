@@ -3,6 +3,7 @@ import { ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { session } from './session'
 import { api } from './api'
+import BankLogo from './components/BankLogo.vue'
 
 const router = useRouter()
 const email = ref('')
@@ -28,7 +29,7 @@ function logout() {
 <template>
   <header v-if="session.token" class="topbar">
     <div class="topbar-inner">
-      <RouterLink to="/" class="brand">Banking core</RouterLink>
+      <RouterLink to="/" class="brand"><BankLogo :size="22" />Banking core</RouterLink>
       <div class="user">
         <span class="badge">{{ session.role }}</span>
         <span class="muted email">{{ email }}</span>
@@ -42,8 +43,9 @@ function logout() {
 <style scoped>
 .topbar { background: var(--surface); border-bottom: 1px solid var(--line); }
 .topbar-inner { max-width: 1080px; margin: 0 auto; padding: 12px 16px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.brand { font-weight: 700; color: var(--ink); letter-spacing: -.01em; }
+.brand { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; color: var(--ink); letter-spacing: -.01em; }
 .brand:hover { text-decoration: none; }
+.brand svg { color: var(--accent); }
 .user { display: flex; align-items: center; gap: 12px; font-size: .875rem; }
 .user button { padding: 6px 12px; }
 @media (max-width: 560px) {
