@@ -75,12 +75,14 @@ src/
 ```
 frontend/
 ├── vite.config.js           # proxy /api → API_URL (http://app:8080 en compose, localhost:8080 fuera)
+├── public/favicon.svg       # el logo con los colores de acento fijos, porque no lee las variables de CSS
 └── src/
     ├── api.js               # fetch con el Bearer; un 401 cierra la sesión y manda al login
     ├── session.js           # token en sessionStorage; sub y role se leen de sus claims
     ├── format.js            # montos como texto, nunca Number; fechas en es-MX
     ├── router.js            # guardas: sin token → login, must_change_password → /password
     ├── App.vue, style.css   # barra superior y tokens de color claro/oscuro
+    ├── components/BankLogo.vue  # logo SVG de banco en currentColor, con prop size; en la barra y el login
     └── views/               # Login, Password, Accounts, Account (historial y operaciones), OpenAccount
 ```
 
