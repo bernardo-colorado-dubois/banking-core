@@ -141,7 +141,7 @@ async function reverse(movement) {
       </div>
 
       <div class="layout">
-        <section class="card">
+        <section class="card operations">
           <h2>New operation</h2>
           <div class="tabs">
             <button :class="{ active: operation === 'deposit' }" @click="choose('deposit')">Deposit</button>
@@ -214,8 +214,11 @@ async function reverse(movement) {
 .balance { display: grid; text-align: right; }
 .balance span { font-size: .8rem; }
 .balance strong { font-size: 1.8rem; font-weight: 500; }
-.layout { display: grid; grid-template-columns: 320px 1fr; gap: 20px; align-items: start; }
-.history { min-width: 0; }
+.layout { display: grid; grid-template-columns: 300px 1fr; gap: 16px; align-items: start; }
+.history { min-width: 0; padding: 20px 16px; }
+.operations { min-width: 0; padding: 20px 16px; font-size: .85rem; }
+.operations .tabs button { font-size: .8rem; padding: 8px 4px; }
+.operations label, .operations button { font-size: .82rem; }
 @media (max-width: 860px) {
   .layout { grid-template-columns: 1fr; }
   .balance { text-align: left; }

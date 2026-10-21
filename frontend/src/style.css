@@ -28,7 +28,7 @@ a:hover { text-decoration: underline; }
 .mono, code { font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: .92em; }
 .muted { color: var(--muted); }
 
-.page { max-width: 1080px; margin: 0 auto; padding: 32px 16px 64px; }
+.page { max-width: 1320px; margin: 0 auto; padding: 32px 16px 64px; }
 .page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 24px; }
 h1 { font-size: 1.6rem; font-weight: 700; letter-spacing: -.01em; }
 h2 { font-size: 1.05rem; font-weight: 600; margin-bottom: 16px; }
@@ -66,9 +66,9 @@ button.danger { background: transparent; color: var(--danger); border-color: var
 
 /* Tables */
 .table-wrap { overflow-x: auto; }
-table { width: 100%; border-collapse: collapse; font-size: .9rem; }
-th { text-align: left; font-size: .75rem; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); padding: 10px 12px; border-bottom: 1px solid var(--line); white-space: nowrap; }
-td { padding: 12px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+table { width: 100%; border-collapse: collapse; font-size: .82rem; }
+th { text-align: left; font-size: .7rem; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); padding: 8px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+td { padding: 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
 tbody tr:last-child td { border-bottom: 0; }
 .num { text-align: right; font-variant-numeric: tabular-nums; }
 
