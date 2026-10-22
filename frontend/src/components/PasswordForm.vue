@@ -33,17 +33,26 @@ async function submit() {
 </script>
 
 <template>
-  <form @submit.prevent="submit">
-    <p v-if="error" class="alert error">{{ error }}</p>
-    <label>Current password
-      <input v-model="currentPassword" type="password" autocomplete="current-password" required>
-    </label>
-    <label>New password
-      <input v-model="newPassword" type="password" autocomplete="new-password" required>
-    </label>
-    <label>Confirm new password
-      <input v-model="confirmation" type="password" autocomplete="new-password" required>
-    </label>
-    <button :disabled="busy">{{ busy ? 'Saving…' : 'Change password' }}</button>
-  </form>
+  <div class="card">
+    <h1>Change password</h1>
+    <p v-if="session.mustChangePassword" class="muted lead">You must set a new password before continuing.</p>
+    <form @submit.prevent="submit">
+      <p v-if="error" class="alert error">{{ error }}</p>
+      <label>Current password
+        <input v-model="currentPassword" type="password" autocomplete="current-password" required>
+      </label>
+      <label>New password
+        <input v-model="newPassword" type="password" autocomplete="new-password" required>
+      </label>
+      <label>Confirm new password
+        <input v-model="confirmation" type="password" autocomplete="new-password" required>
+      </label>
+      <button :disabled="busy">{{ busy ? 'Saving…' : 'Change password' }}</button>
+    </form>
+  </div>
 </template>
+
+<style scoped>
+.lead { margin: 4px 0 20px; font-size: .9rem; }
+h1 { margin-bottom: 16px; }
+</style>

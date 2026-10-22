@@ -2,6 +2,7 @@
 import { ref } from 'vue'
 import { api } from '../api'
 import { session } from '../session'
+import BankLogo from './BankLogo.vue'
 
 // Logs in and starts the session. Emits logged-in with the API result so the view
 // decides where to go next
@@ -32,15 +33,26 @@ async function submit() {
 </script>
 
 <template>
-  <form @submit.prevent="submit">
-    <p v-if="expired && !error" class="alert error">Your session expired. Log in again.</p>
-    <p v-if="error" class="alert error">{{ error }}</p>
-    <label>Email
-      <input v-model="email" type="email" autocomplete="username" required>
-    </label>
-    <label>Password
-      <input v-model="password" type="password" autocomplete="current-password" required>
-    </label>
-    <button :disabled="busy">{{ busy ? 'Logging in…' : 'Log in' }}</button>
-  </form>
+  <div class="card box">
+    <BankLogo :size="44" class="logo" />
+    <h1>Banking core</h1>
+    <p class="muted lead">Log in to manage accounts and movements.</p>
+    <form @submit.prevent="submit">
+      <p v-if="expired && !error" class="alert error">Your session expired. Log in again.</p>
+      <p v-if="error" class="alert error">{{ error }}</p>
+      <label>Email
+        <input v-model="email" type="email" autocomplete="username" required>
+      </label>
+      <label>Password
+        <input v-model="password" type="password" autocomplete="current-password" required>
+      </label>
+      <button :disabled="busy">{{ busy ? 'Logging in…' : 'Log in' }}</button>
+    </form>
+  </div>
 </template>
+
+<style scoped>
+.box { width: 100%; max-width: 380px; }
+.logo { color: var(--accent); margin-bottom: 12px; }
+.lead { margin: 4px 0 24px; font-size: .9rem; }
+</style>

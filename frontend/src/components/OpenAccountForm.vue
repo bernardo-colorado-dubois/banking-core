@@ -45,7 +45,8 @@ async function submit() {
 </script>
 
 <template>
-  <div>
+  <div class="card">
+    <h1>Open account</h1>
     <TabSwitch v-model="kind" :options="kinds" />
     <p class="muted hint">{{ hints[kind] }}</p>
     <form @submit.prevent="submit">
@@ -70,5 +71,6 @@ async function submit() {
 </template>
 
 <style scoped>
+h1 { margin-bottom: 20px; }
 .hint { font-size: .875rem; margin-bottom: 16px; }
 </style>
