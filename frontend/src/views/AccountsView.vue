@@ -3,7 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../api'
 import { session } from '../session'
-import { date, money } from '../format'
+import AccountsTable from '../components/AccountsTable.vue'
 
 const router = useRouter()
 
@@ -50,27 +50,8 @@ onMounted(async () => {
     <div v-else-if="!accounts.length" class="card">
       <p class="muted">There are no accounts yet.</p>
     </div>
-    <div v-else class="card table-wrap flush">
-      <table>
-        <thead>
-          <tr>
-            <th>Alias</th>
-            <th>Class</th>
-            <th>Holder</th>
-            <th>Opened</th>
-            <th class="num">Balance</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="account in accounts" :key="account.id">
-            <td><RouterLink :to="{ name: 'account', params: { id: account.id } }">{{ account.alias }}</RouterLink></td>
-            <td><span class="badge">{{ account.account_class }}</span></td>
-            <td>{{ account.holder }}</td>
-            <td class="muted">{{ date(account.created_at) }}</td>
-            <td class="num mono">{{ money(account.balance) }}</td>
-          </tr>
-        </tbody>
-      </table>
+    <div v-else class="card flush">
+      <AccountsTable :accounts="accounts" />
     </div>
   </main>
 </template>

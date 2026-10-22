@@ -1,29 +1,13 @@
 <script setup>
-import { ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { api } from '../api'
-import { session } from '../session'
 import BankLogo from '../components/BankLogo.vue'
+import LoginForm from '../components/LoginForm.vue'
 
 const route = useRoute()
 const router = useRouter()
-const email = ref('')
-const password = ref('')
-const error = ref('')
-const busy = ref(false)
 
-async function submit() {
-  error.value = ''
-  busy.value = true
-  try {
-    const result = await api.login(email.value.trim(), password.value)
-    session.start(result.token, result.must_change_password)
-    router.push(result.must_change_password ? { name: 'password' } : { name: 'accounts' })
-  } catch (failure) {
-    error.value = failure.message
-  } finally {
-    busy.value = false
-  }
+function enter(result) {
+  router.push(result.must_change_password ? { name: 'password' } : { name: 'accounts' })
 }
 </script>
 
@@ -33,17 +17,7 @@ async function submit() {
       <BankLogo :size="44" class="logo" />
       <h1>Banking core</h1>
       <p class="muted lead">Log in to manage accounts and movements.</p>
-      <form @submit.prevent="submit">
-        <p v-if="route.query.expired && !error" class="alert error">Your session expired. Log in again.</p>
-        <p v-if="error" class="alert error">{{ error }}</p>
-        <label>Email
-          <input v-model="email" type="email" autocomplete="username" required>
-        </label>
-        <label>Password
-          <input v-model="password" type="password" autocomplete="current-password" required>
-        </label>
-        <button :disabled="busy">{{ busy ? 'Logging in…' : 'Log in' }}</button>
-      </form>
+      <LoginForm :expired="Boolean(route.query.expired)" @logged-in="enter" />
     </div>
   </main>
 </template>

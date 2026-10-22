@@ -82,9 +82,23 @@ frontend/
     ├── format.js            # montos como texto, nunca Number; fechas en es-MX
     ├── router.js            # guardas: sin token → login, must_change_password → /password
     ├── App.vue, style.css   # barra superior y tokens de color claro/oscuro
-    ├── components/BankLogo.vue  # logo SVG de banco en currentColor, con prop size; en la barra y el login
+    ├── components/
+    │   ├── BankLogo.vue        # logo SVG de banco en currentColor, con prop size; en la barra y el login
+    │   ├── TabSwitch.vue       # pestañas con v-model (prop options: valor → etiqueta)
+    │   ├── LoginForm.vue       # login e inicio de sesión (prop expired; emite logged-in)
+    │   ├── PasswordForm.vue    # cambio de contraseña (emite changed)
+    │   ├── OpenAccountForm.vue # alta de cliente, VOSTRO o NOSTRO (emite opened con la cuenta)
+    │   ├── AccountsTable.vue   # tabla de cuentas (prop accounts)
+    │   ├── MovementsTable.vue  # tabla de movimientos (props movements, canReverse; emite reverse)
+    │   └── OperationPanel.vue  # depósito, retiro y transferencia (props accountId, destinations; emite applied)
     └── views/               # Login, Password, Accounts, Account (historial y operaciones), OpenAccount
 ```
+
+Reparto de responsabilidades:
+
+- Las **vistas** son las únicas que conocen la ruta: cargan los datos de la página con `api`, arman el layout (tarjetas, encabezados `h2`) y muestran los estados de carga, error y vacío.
+- Los **componentes** reciben datos por props y avisan por eventos; no dibujan tarjetas ni leen la ruta. Las tablas y `TabSwitch` no llaman a la API. Un formulario sí aplica su propia operación (`OperationPanel` y los `*Form` llaman a `api`, validan y muestran sus mensajes) y emite el resultado para que la vista recargue o navegue; las acciones de una tabla (el reverso) las resuelve la vista.
+- `style.css` guarda las clases visuales compartidas (`card`, `tabs`, tablas, `alert`, `badge`, `back`); el `<style scoped>` de cada archivo solo ajusta lo propio.
 
 - El navegador solo habla con el origen de Vite, así que Flask no necesita CORS.
 - La UI muestra todas las acciones y deja que la API responda 403, salvo el botón de reverso, que solo ve el admin (`session.role`): el token trae el rol y no los permisos. La API sigue exigiendo `REVERSE`.
