@@ -1,0 +1,14 @@
+# Variables de entorno locales (contienen credenciales)
+.env
+
+# Entorno virtual
+venv/
+
+# Python
+__pycache__/
+*.pyc
+debug/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/

@@ -1,0 +1,59 @@
+services:
+  postgres:
+    # PostgreSQL 15+ es necesario por UNIQUE NULLS NOT DISTINCT en la tabla permisos
+    image: postgres:17-alpine
+    container_name: core_bancario_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      TZ: America/Mexico_City
+      PGTZ: America/Mexico_City
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    container_name: core_bancario_app
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # Dentro de la red de compose la base se alcanza por el nombre del servicio, no por localhost
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    ports:
+      - "${PORT:-8080}:8080"
+    volumes:
+      # El código montado permite que el servidor de desarrollo recargue al guardar
+      - .:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  frontend:
+    image: node:22-alpine
+    container_name: core_bancario_frontend
+    restart: unless-stopped
+    working_dir: /app
+    # Vite proxies /api to the app service, so the browser sees a single origin
+    environment:
+      API_URL: http://app:8080
+    command: sh -c "npm ci && npm run dev"
+    ports:
+      - "${FRONTEND_PORT:-5173}:5173"
+    volumes:
+      # The code is mounted so Vite reloads on save; node_modules stays in the container
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - app
+
+volumes:
+  postgres_data:
